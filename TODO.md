@@ -1,6 +1,6 @@
-- [x] Analyze Render logs and identify true startup root cause
-- [x] Confirm user approval for best-practice deployment fix
-- [x] Add runtime pin file for Render (`runtime.txt`)
-- [x] Ensure startup commands target `server:app` (not `backend.server:app`)
-- [ ] Commit and push deployment fix commit
-- [ ] Provide exact Render dashboard settings to apply
+- [x] Analyze frontend/backend connectivity issue on deployed frontend login
+- [x] Identify all localhost backend fallbacks in frontend code
+- [x] Replace localhost fallbacks with Render backend URL fallback while keeping env override
+- [x] Add frontend/.env.example with documented backend env keys
+- [ ] Run frontend production build test
+- [ ] Commit and push changes to GitHub branch

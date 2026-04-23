@@ -49,7 +49,7 @@ export default function WhatsAppAgent() {
   useEffect(() => {
     if (!connecting && !qrCode) return undefined;
     const sessionId = localStorage.getItem("session_id");
-    const streamBase = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+    const streamBase = process.env.REACT_APP_BACKEND_URL || process.env.VITE_BACKEND_URL || process.env.VITE_API_URL || "https://stems-sales-agent.onrender.com";
     const es = new EventSource(`${streamBase}/api/whatsapp/qr-stream?session_id=${encodeURIComponent(sessionId || "")}`);
     es.onmessage = (evt) => {
       try {

@@ -2,8 +2,13 @@ import axios from "axios";
 
 const normalizeBaseUrl = (url) => (url || "").replace(/\/+$/, "");
 
-const configuredBackend = normalizeBaseUrl(process.env.REACT_APP_BACKEND_URL);
-const backendCandidates = [configuredBackend, "http://localhost:8001", "http://localhost:8000"]
+const configuredBackend = normalizeBaseUrl(
+  process.env.REACT_APP_BACKEND_URL ||
+  process.env.VITE_BACKEND_URL ||
+  process.env.VITE_API_URL
+);
+const defaultBackend = "https://stems-sales-agent.onrender.com";
+const backendCandidates = [configuredBackend, defaultBackend]
   .filter(Boolean)
   .filter((url, index, arr) => arr.indexOf(url) === index);
 
