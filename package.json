@@ -1,0 +1,38 @@
+{
+  "name": "stems-sales-agent",
+  "version": "1.0.0",
+  "description": "Stems AI Sales Agent — WhatsApp + Email + Call + Dashboard",
+  "main": "index.js",
+  "scripts": {
+    "start":     "node index.js",
+    "dev":       "nodemon index.js",
+    "wa":        "node agents/whatsapp-agent.js",
+    "email":     "node agents/email-agent.js",
+    "call":      "node agents/call-agent.js",
+    "backend":   "cd backend && python -m uvicorn server:app --host 0.0.0.0 --port 8000 --reload",
+    "frontend":  "cd frontend && npm start",
+    "ngrok":     "ngrok http 3000 --host-header=localhost"
+  },
+  "dependencies": {
+    "@hapi/boom":         "^10.0.1",
+    "@anthropic-ai/sdk":  "^0.80.0",
+    "@vapi-ai/server-sdk":"^0.11.0",
+    "@whiskeysockets/baileys": "^6.7.18",
+    "axios":              "^1.13.6",
+    "dotenv":             "^17.3.1",
+    "express":            "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "helmet":             "^8.0.0",
+    "mongoose":           "^8.13.2",
+    "node-cron":          "^3.0.3",
+    "nodemailer":         "^8.0.4",
+    "pino":               "^9.3.2",
+    "qrcode":             "^1.5.4",
+    "ws":                 "^8.18.0",
+    "xlsx":               "^0.18.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  },
+  "engines": { "node": ">=18.0.0" }
+}
