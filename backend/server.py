@@ -20,8 +20,12 @@ from datetime import datetime, timezone, timedelta
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
-MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
-DB_NAME   = os.environ.get("DB_NAME",   "stems-sales-agent")
+MONGO_URL = os.environ.get("MONGO_URL") or os.environ.get("MONGODB_URI")
+DB_NAME   = os.environ.get("DB_NAME", "stems agents data")
+
+if not MONGO_URL:
+    raise RuntimeError("Missing MONGO_URL/MONGODB_URI environment variable")
+
 mongo_client = AsyncIOMotorClient(MONGO_URL)
 db = mongo_client[DB_NAME]
 
