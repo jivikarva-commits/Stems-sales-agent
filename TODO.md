@@ -1,7 +1,6 @@
-- [x] Review Render startup-related files and imports
-- [x] Confirm branch/commit state and pushed fixes
-- [x] Verify no `backend.*` imports in backend Python code
-- [x] Draft and confirm patch plan with user
-- [x] Add root compatibility module `backend.py` exposing app
-- [ ] Commit and push compatibility patch
-- [ ] Verify remote commit and provide deploy/testing guidance
+- [x] Analyze Render logs and identify true startup root cause
+- [x] Confirm user approval for best-practice deployment fix
+- [x] Add runtime pin file for Render (`runtime.txt`)
+- [x] Ensure startup commands target `server:app` (not `backend.server:app`)
+- [ ] Commit and push deployment fix commit
+- [ ] Provide exact Render dashboard settings to apply
