@@ -79,26 +79,55 @@ export default function AgentSetupPage() {
   useEffect(() => {
     if (!connecting && !qrCode) return undefined;
     const sessionId = localStorage.getItem("session_id");
-    const streamBase = process.env.REACT_APP_BACKEND_URL || process.env.VITE_BACKEND_URL || process.env.VITE_API_URL || "https://stems-sales-agent.onrender.com";
+    const streamBase =
+      process.env.VITE_API_URL ||
+      process.env.REACT_APP_BACKEND_URL ||
+      process.env.VITE_BACKEND_URL ||
+      "https://stems-sales-agent.onrender.com";
+
+    const toQrImageSrc = (value) => {
+      const raw = String(value || "").trim();
+      if (!raw) return "";
+      if (raw.startsWith("data:image")) return raw;
+      return `data:image/png;base64,${raw}`;
+    };
+
     const es = new EventSource(`${streamBase}/api/whatsapp/qr-stream?session_id=${encodeURIComponent(sessionId || "")}`);
     es.onmessage = (evt) => {
       try {
         const payload = JSON.parse(evt.data);
-        if (payload.event === "qr") setQrCode(payload.data || "");
+
+        if (payload.event === "qr") {
+          const normalizedQr = toQrImageSrc(payload.data);
+          if (normalizedQr) {
+            setQrCode(normalizedQr);
+            setError("");
+          }
+          return;
+        }
+
         if (payload.event === "status") {
-          const connected = payload.data === "connected";
-          setWaState((prev) => ({ ...prev, state: payload.data, connected }));
-          if (connected || payload.data === "error") {
+          const stateValue = payload.data;
+          const connected = stateValue === "connected";
+          setWaState((prev) => ({ ...prev, state: stateValue, connected }));
+
+          if (connected) {
+            setConnecting(false);
+            setQrCode("");
+          } else if (stateValue === "error") {
             setConnecting(false);
           }
-          if (connected) setQrCode("");
         }
-      } catch (_e) {}
+      } catch (_e) {
+        setError("Unable to read WhatsApp QR stream data.");
+      }
     };
+
     es.onerror = () => {
       setConnecting(false);
       es.close();
     };
+
     return () => es.close();
   }, [connecting, qrCode]);
 

@@ -1,9 +1,6 @@
-# TODO - WhatsApp Render Production Fix
-
-- [ ] Implement MongoDB-based Baileys auth state in `agents/whatsapp-agent.js`
-- [ ] Replace `useMultiFileAuthState` flow with Mongo-backed state and creds persistence
-- [ ] Add detailed WhatsApp init/startup/error logs and success marker log
-- [ ] Extend `agents/index.js` with subprocess health/debug telemetry endpoint
-- [ ] Add backend `/api/whatsapp/debug` in `backend/server.py` with subprocess + session visibility
-- [ ] Run critical-path endpoint tests for health/init/status/debug
-- [ ] Commit and push to `main`
+- [x] Update AgentSetupPage SSE URL to prioritize VITE_API_URL for production
+- [x] Normalize QR payload to valid data URL before rendering
+- [x] Improve SSE message/error handling to avoid false error state overriding QR display
+- [x] Verify `<img src={qrCode} />` render path remains correct
+- [ ] Commit changes
+- [ ] Push to main
