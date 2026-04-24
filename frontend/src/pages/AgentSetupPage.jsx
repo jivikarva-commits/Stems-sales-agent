@@ -144,7 +144,31 @@ export default function AgentSetupPage() {
     setStep((s) => Math.max(1, s - 1));
   };
 
-  const connectWhatsApp = async () => {
+  const saveWhatsAppSetup = async () => {
+    if (!phone.trim()) {
+      setError("WhatsApp business number is required.");
+      return;
+    }
+    setError("");
+    setSaving(true);
+    try {
+      await api.post("/agents/setup", {
+        type: "whatsapp",
+        credentials: {
+          provider: "baileys",
+          business_number: phone.trim(),
+          business_name: form.business_name.trim(),
+          messaging_tier: form.messaging_tier,
+        },
+      });
+    } catch (_e) {
+      setError("Unable to save WhatsApp setup.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const generateWhatsAppQr = async () => {
     if (!phone.trim()) {
       setError("WhatsApp business number is required.");
       return;
@@ -165,7 +189,7 @@ export default function AgentSetupPage() {
       setConnecting(true);
       setQrCode("");
     } catch (_e) {
-      setError("Unable to start WhatsApp connection.");
+      setError("Unable to generate WhatsApp QR code.");
     } finally {
       setSaving(false);
     }
@@ -281,8 +305,11 @@ export default function AgentSetupPage() {
                   className="bg-white/5 border-white/15 text-white"
                 />
                 <div className="flex flex-wrap gap-2">
-                  <Button onClick={connectWhatsApp} disabled={saving || connecting} className="bg-blue-500 hover:bg-blue-600 text-white">
-                    {connecting ? "Generating QR..." : "Start WhatsApp Connection"}
+                  <Button onClick={saveWhatsAppSetup} disabled={saving} className="bg-blue-500 hover:bg-blue-600 text-white">
+                    Save WhatsApp Setup
+                  </Button>
+                  <Button onClick={generateWhatsAppQr} disabled={saving || connecting} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                    {connecting ? "Generating QR..." : "Generate QR Code"}
                   </Button>
                   <Button onClick={refreshWhatsAppStatus} variant="outline" className="border-white/20 bg-white/5 text-slate-200 hover:bg-white/10">
                     Refresh Status
