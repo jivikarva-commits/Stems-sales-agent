@@ -7,7 +7,6 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const cron = require('node-cron');
 const path = require('path');
-const fs = require('fs');
 const nodeCrypto = require('crypto');
 const P = require('pino');
 const QRCode = require('qrcode');
@@ -33,7 +32,6 @@ REQUIRED_ENV.forEach((k) => {
 });
 
 const AGENT_NAME = 'Stems Sales Agent';
-const SESSIONS_DIR = path.join(__dirname, 'sessions');
 const DEFAULT_OWNER = (process.env.PRIMARY_OWNER_EMAIL || 'samerkarwande3@gmail.com').trim().toLowerCase();
 const OWNER_HEADER = 'x-owner-email';
 
@@ -42,9 +40,6 @@ function ownerScope(ownerEmail, extra = {}) {
   return { ...extra, owner_email: owner, user_id: owner };
 }
 
-if (!fs.existsSync(SESSIONS_DIR)) {
-  fs.mkdirSync(SESSIONS_DIR, { recursive: true });
-}
 
 const conversationSchema = new mongoose.Schema({
   userId: { type: String, required: true, index: true },
@@ -557,8 +552,26 @@ async function startServer() {
 
   app.post('/api/whatsapp/init-connection', async (req, res) => {
     const owner = ownerFromReq(req);
-    await waManager.init(owner);
-    return res.json({ status: 'initializing', stream_url: '/api/whatsapp/qr-stream' });
+    try {
+      await waManager.init(owner);
+      return res.json({ status: 'initializing', stream_url: '/api/whatsapp/qr-stream', owner });
+    } catch (e) {
+      const message = e?.message || 'whatsapp_init_failed';
+      console.error(`[WA init] owner=${owner} failed:`, message);
+      return res.status(500).json({ error: message, code: 'WHATSAPP_INIT_FAILED', owner });
+    }
+  });
+
+  app.get('/api/whatsapp/health', async (req, res) => {
+    const owner = ownerFromReq(req);
+    const status = waManager.status(owner);
+    return res.json({
+      ok: true,
+      agent: AGENT_NAME,
+      owner,
+      status,
+      ts: new Date(),
+    });
   });
 
   app.get('/api/whatsapp/qr-stream', async (req, res) => {

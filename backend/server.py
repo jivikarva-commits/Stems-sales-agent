@@ -1322,7 +1322,11 @@ async def send_whatsapp_template(data: TemplateMessageRequest):
 async def wa_init_connection():
     result = await node_post_owner(f"{WA_URL}/api/whatsapp/init-connection", {})
     if isinstance(result, dict) and result.get("error"):
-        raise HTTPException(status_code=500, detail=result.get("error"))
+        status_code = int(result.get("status_code") or 500)
+        if status_code < 400 or status_code > 599:
+            status_code = 500
+        detail = result.get("detail") or result.get("error") or "WhatsApp init failed"
+        raise HTTPException(status_code=status_code, detail=detail)
     return result
 
 @api_router.get("/whatsapp/status")
