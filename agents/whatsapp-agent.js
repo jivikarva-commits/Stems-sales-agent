@@ -27,7 +27,7 @@ require('dotenv').config();
 const REQUIRED_ENV = ['CLAUDE_API_KEY', 'MONGODB_URI'];
 REQUIRED_ENV.forEach((k) => {
   if (!process.env[k]) {
-    console.error(`❌ Missing env var: ${k}`);
+    console.error(` Missing env var: ${k}`);
     process.exit(1);
   }
 });
@@ -538,7 +538,7 @@ async function startServer() {
   try {
     await mongoose.connection.collection('userprofiles').dropIndex('userId_1');
   } catch (_e) {}
-  console.log('✅ MongoDB connected');
+  console.log(' MongoDB connected');
 
   const app = express();
   app.set('trust proxy', 1);
@@ -636,8 +636,8 @@ async function startServer() {
     const agentName = (account?.agent_name || 'our assistant').trim();
     const businessName = (account?.business_name || 'our team').trim();
     const text = template === 'stems_personalized_intro'
-      ? `Hi ${variables[0] || 'there'}! 👋 This is ${agentName} from ${businessName}. Hum aapke business ke liye qualified leads aur automated follow-ups setup kar sakte hain. Kya aap 10 min quick call ke liye available ho?`
-      : `Hi! 👋 This is ${agentName} from ${businessName}. Hum aapke business ke liye AI-powered lead generation + WhatsApp/email/call automation setup karte hain. Kya quick discussion kar sakte hain?`;
+      ? `Hi ${variables[0] || 'there'}!  This is ${agentName} from ${businessName}. Hum aapke business ke liye qualified leads aur automated follow-ups setup kar sakte hain. Kya aap 10 min quick call ke liye available ho?`
+      : `Hi!  This is ${agentName} from ${businessName}. Hum aapke business ke liye AI-powered lead generation + WhatsApp/email/call automation setup karte hain. Kya quick discussion kar sakte hain?`;
     try {
       const sent = await waManager.sendText(owner, to, text);
       return res.json({ success: true, to: String(to).replace(/[^\d]/g, ''), template, message_id: sent.messageId });
@@ -693,7 +693,7 @@ async function startServer() {
           console.error(`Campaign failed for ${lead.userId}:`, e.message);
         }
       }
-      console.log(`📢 Campaign done — sent: ${sent}, failed: ${failed}`);
+      console.log(` Campaign done  sent: ${sent}, failed: ${failed}`);
     })();
   });
 
@@ -713,7 +713,7 @@ async function startServer() {
 
   cron.schedule('0 9 * * *', async () => {
     const count = await UserProfile.countDocuments(ownerScope(DEFAULT_OWNER, { leadScore: { $gte: 70 } }));
-    console.log(`📊 [${AGENT_NAME}] Hot leads: ${count}`);
+    console.log(` [${AGENT_NAME}] Hot leads: ${count}`);
   });
 
   app.use((err, _req, res, _next) => {
@@ -723,11 +723,11 @@ async function startServer() {
 
   const PORT = parseInt(process.env.PORT, 10) || 3000;
   app.listen(PORT, () => {
-    console.log(`\n🚀 ${AGENT_NAME} is LIVE on port ${PORT}`);
-    console.log(`📊 Stats  → GET http://localhost:${PORT}/api/stats`);
-    console.log(`👥 Leads  → GET http://localhost:${PORT}/api/leads`);
-    console.log(`📱 QR SSE → GET http://localhost:${PORT}/api/whatsapp/qr-stream`);
-    console.log(`❤️ Health → GET http://localhost:${PORT}/health\n`);
+    console.log(`\n ${AGENT_NAME} is LIVE on port ${PORT}`);
+    console.log(` Stats   GET http://localhost:${PORT}/api/stats`);
+    console.log(` Leads   GET http://localhost:${PORT}/api/leads`);
+    console.log(` QR SSE  GET http://localhost:${PORT}/api/whatsapp/qr-stream`);
+    console.log(` Health  GET http://localhost:${PORT}/health\n`);
   });
 }
 
@@ -737,6 +737,6 @@ process.on('SIGINT', async () => {
 });
 
 startServer().catch((err) => {
-  console.error('❌ Startup failed:', err.message);
+  console.error(' Startup failed:', err.message);
   process.exit(1);
 });
