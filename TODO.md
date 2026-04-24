@@ -1,9 +1,9 @@
-- [ ] Identify all runtime ngrok/localhost references in app source (excluding dependency/vendor files)
-- [ ] Create agents process orchestrator at `agents/index.js`
-- [ ] Update `backend/server.py` startup/shutdown to manage Node agents subprocess
-- [ ] Add root `build.sh` to install Python + Node dependencies for Render
-- [ ] Update `render.yaml` build command/root settings for new build flow
-- [ ] Remove ngrok scripts/dependency references from project manifests and startup scripts
-- [ ] Replace ngrok URLs with `https://stems-sales-agent.onrender.com` in app code/log strings
-- [ ] Run targeted validation checks (search + build/syntax where possible)
-- [ ] Commit and push all changes
+# TODO - WhatsApp Render Production Fix
+
+- [ ] Implement MongoDB-based Baileys auth state in `agents/whatsapp-agent.js`
+- [ ] Replace `useMultiFileAuthState` flow with Mongo-backed state and creds persistence
+- [ ] Add detailed WhatsApp init/startup/error logs and success marker log
+- [ ] Extend `agents/index.js` with subprocess health/debug telemetry endpoint
+- [ ] Add backend `/api/whatsapp/debug` in `backend/server.py` with subprocess + session visibility
+- [ ] Run critical-path endpoint tests for health/init/status/debug
+- [ ] Commit and push to `main`
