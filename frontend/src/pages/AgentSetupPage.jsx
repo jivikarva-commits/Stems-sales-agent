@@ -93,39 +93,69 @@ export default function AgentSetupPage() {
     };
 
     const es = new EventSource(`${streamBase}/api/whatsapp/qr-stream?session_id=${encodeURIComponent(sessionId || "")}`);
-    es.onmessage = (evt) => {
-      try {
-        const payload = JSON.parse(evt.data);
 
-        if (payload.event === "qr") {
-          const normalizedQr = toQrImageSrc(payload.data);
-          if (normalizedQr) {
-            setQrCode(normalizedQr);
-            setError("");
-          }
-          return;
+    const handlePayload = (payload) => {
+      if (!payload || typeof payload !== "object") return;
+
+      if (payload.event === "qr") {
+        const normalizedQr = toQrImageSrc(payload.data);
+        if (normalizedQr) {
+          setQrCode(normalizedQr);
+          setError("");
+          setWaState((prev) => ({ ...prev, state: "qr", connected: false }));
+          setConnecting(true);
         }
+        return;
+      }
 
-        if (payload.event === "status") {
-          const stateValue = payload.data;
-          const connected = stateValue === "connected";
-          setWaState((prev) => ({ ...prev, state: stateValue, connected }));
+      if (payload.event === "status") {
+        const stateValue = payload.data;
+        const connected = stateValue === "connected";
+        setWaState((prev) => ({ ...prev, state: stateValue, connected }));
 
-          if (connected) {
-            setConnecting(false);
-            setQrCode("");
-          } else if (stateValue === "error") {
+        if (connected) {
+          setConnecting(false);
+          setQrCode("");
+        } else if (stateValue === "error") {
+          if (!qrCode) {
             setConnecting(false);
           }
         }
-      } catch (_e) {
-        setError("Unable to read WhatsApp QR stream data.");
       }
     };
 
+    es.onmessage = (evt) => {
+      try {
+        const payload = JSON.parse(evt.data);
+        handlePayload(payload);
+      } catch (_e) {
+        // Some SSE servers may send non-JSON strings; ignore those safely.
+      }
+    };
+
+    es.addEventListener("qr", (evt) => {
+      try {
+        const payload = JSON.parse(evt.data);
+        handlePayload(payload.event ? payload : { event: "qr", data: payload.data ?? evt.data });
+      } catch (_e) {
+        handlePayload({ event: "qr", data: evt.data });
+      }
+    });
+
+    es.addEventListener("status", (evt) => {
+      try {
+        const payload = JSON.parse(evt.data);
+        handlePayload(payload.event ? payload : { event: "status", data: payload.data ?? evt.data });
+      } catch (_e) {
+        handlePayload({ event: "status", data: evt.data });
+      }
+    });
+
     es.onerror = () => {
-      setConnecting(false);
-      es.close();
+      // Do not force UI into error/disconnected if QR is already present.
+      if (!qrCode) {
+        setConnecting(false);
+      }
     };
 
     return () => es.close();
