@@ -1,6 +1,9 @@
-- [x] Analyze frontend/backend connectivity issue on deployed frontend login
-- [x] Identify all localhost backend fallbacks in frontend code
-- [x] Replace localhost fallbacks with Render backend URL fallback while keeping env override
-- [x] Add frontend/.env.example with documented backend env keys
-- [ ] Run frontend production build test
-- [ ] Commit and push changes to GitHub branch
+- [ ] Identify all runtime ngrok/localhost references in app source (excluding dependency/vendor files)
+- [ ] Create agents process orchestrator at `agents/index.js`
+- [ ] Update `backend/server.py` startup/shutdown to manage Node agents subprocess
+- [ ] Add root `build.sh` to install Python + Node dependencies for Render
+- [ ] Update `render.yaml` build command/root settings for new build flow
+- [ ] Remove ngrok scripts/dependency references from project manifests and startup scripts
+- [ ] Replace ngrok URLs with `https://stems-sales-agent.onrender.com` in app code/log strings
+- [ ] Run targeted validation checks (search + build/syntax where possible)
+- [ ] Commit and push all changes

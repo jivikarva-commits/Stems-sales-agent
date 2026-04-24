@@ -1,22 +1,22 @@
 'use strict';
 
 /**
- * ╔══════════════════════════════════════════════════════╗
- * ║        STEMS EMAIL AGENT — Production Server         ║
- * ║        Powered by Resend API + Claude                ║
- * ╚══════════════════════════════════════════════════════╝
+ * 
+ *         STEMS EMAIL AGENT  Production Server         
+ *         Powered by Resend API + Claude                
+ * 
  *
  * Run:  node email-agent.js
  * Dev:  nodemon email-agent.js
  * Port: 3001 (WhatsApp agent runs on 3000)
  *
  * Features:
- *  ✅ Inbound email replies → AI responds automatically
- *  ✅ Outbound cold email campaigns
- *  ✅ AI-powered personalised email writing
- *  ✅ Follow-up sequences (Day 1, 3, 7)
- *  ✅ Shared lead DB with WhatsApp agent
- *  ✅ Open/reply tracking via Resend webhooks
+ *   Inbound email replies  AI responds automatically
+ *   Outbound cold email campaigns
+ *   AI-powered personalised email writing
+ *   Follow-up sequences (Day 1, 3, 7)
+ *   Shared lead DB with WhatsApp agent
+ *   Open/reply tracking via Resend webhooks
  */
 
 const express   = require('express');
@@ -29,9 +29,9 @@ require('dotenv').config();
 
 const { claude, Lead, Conversation, EmailLog } = require('./models/shared');
 
-// ── Validate env ──────────────────────────────────────────────────────────────
+//  Validate env 
 ['CLAUDE_API_KEY', 'GMAIL_USER', 'GMAIL_APP_PASSWORD', 'MONGODB_URI'].forEach((k) => {
-  if (!process.env[k]) { console.error(`❌ Missing env: ${k}`); process.exit(1); }
+  if (!process.env[k]) { console.error(` Missing env: ${k}`); process.exit(1); }
 });
 
 // Gmail SMTP transporter
@@ -100,7 +100,7 @@ async function resolveSenderConfig(ownerEmail) {
   return { senderEmail, senderName, smtpUser, smtpPass, credentials };
 }
 
-// ── AI Email Writer ───────────────────────────────────────────────────────────
+//  AI Email Writer 
 class EmailAgent {
 
   async writeEmail(lead, emailType = 'cold_outreach', sender = {}, context = {}) {
@@ -118,7 +118,7 @@ class EmailAgent {
       cold_outreach: `You are a world-class B2B copywriter writing a cold outreach email for ${businessName}.
 
 SENDER: ${senderName} | ${senderEmail}
-COMPANY: ${businessName} — ${businessDescription}
+COMPANY: ${businessName}  ${businessDescription}
 
 PROSPECT:
 - Name: ${name}
@@ -126,23 +126,23 @@ PROSPECT:
 - Location: ${location}
 
 WHAT WE DELIVER (use specific numbers):
-• 3x more qualified leads within 60 days
-• 40-60% reduction in cost per lead
-• Fully automated WhatsApp + Email + Call follow-ups
-• AI replies to every lead instantly — 24/7
-• Zero additional staff needed
+ 3x more qualified leads within 60 days
+ 40-60% reduction in cost per lead
+ Fully automated WhatsApp + Email + Call follow-ups
+ AI replies to every lead instantly  24/7
+ Zero additional staff needed
 
 EMAIL RULES:
-1. Subject: Create STRONG curiosity — max 8 words. Do NOT use "leads", "sales", "agency" in subject.
+1. Subject: Create STRONG curiosity  max 8 words. Do NOT use "leads", "sales", "agency" in subject.
    Good examples: "Quick question about ${business}", "Saw something interesting about your ads", 
-   "This might explain your conversion drop", "3x leads — done for [City] businesses"
-2. Opening: Address them by name, reference their specific business type or city — make it feel researched
+   "This might explain your conversion drop", "3x leads  done for [City] businesses"
+2. Opening: Address them by name, reference their specific business type or city  make it feel researched
 3. Body: Max 5 lines. One specific pain point. One specific result with a number. One CTA.
-4. Tone: Confident, warm, peer-to-peer — NOT corporate, NOT salesy
-5. CTA: One clear ask — a 15-minute free strategy call. Make it low-commitment.
+4. Tone: Confident, warm, peer-to-peer  NOT corporate, NOT salesy
+5. CTA: One clear ask  a 15-minute free strategy call. Make it low-commitment.
 6. NO "I hope this email finds you well"
 7. NO "Please let me know if you're interested"
-8. NO bullet points in email body — flowing prose only
+8. NO bullet points in email body  flowing prose only
 9. Language: English with natural warmth. If name sounds Indian, you can add slight warmth.
 10. P.S. line: Add one powerful P.S. with a specific result or social proof
 
@@ -150,17 +150,17 @@ Return ONLY valid JSON (no markdown, no backticks):
 {"subject": "...", "body": "..."}`,
 
       followup_day3: `You are writing a follow-up email (Day 3) for ${businessName}.
-First email was sent 3 days ago — no reply yet.
+First email was sent 3 days ago  no reply yet.
 
 PROSPECT: ${name} | ${business}
 SENDER: ${senderName}
 
 RULES:
-- Reference the first email naturally — "Wanted to follow up on my email from a few days back"
-- Add NEW value — a different angle, a stat, or a quick insight they haven't heard
+- Reference the first email naturally  "Wanted to follow up on my email from a few days back"
+- Add NEW value  a different angle, a stat, or a quick insight they haven't heard
 - 3 lines MAX. Make every word count.
 - Do NOT apologize for following up
-- End with a different CTA angle — e.g., "Even a 10-minute chat would be worth it"
+- End with a different CTA angle  e.g., "Even a 10-minute chat would be worth it"
 - Slightly more casual tone than first email
 
 Return ONLY valid JSON:
@@ -173,9 +173,9 @@ SENDER: ${senderName}
 
 RULES:
 - This is the LAST email in the sequence
-- 2 lines ONLY — ultra short
+- 2 lines ONLY  ultra short
 - Make it feel human and slightly vulnerable: "I'll stop reaching out after this..."
-- Leave door open with dignity — no pressure, genuine offer
+- Leave door open with dignity  no pressure, genuine offer
 - The goal is to trigger a reply out of guilt or curiosity
 - Classic breakup email pattern: "I'm going to assume the timing isn't right..."
 
@@ -190,9 +190,9 @@ ORIGINAL SUBJECT: ${lead._replySubject || ''}
 
 RULES:
 - Match their energy and tone exactly
-- If they asked a question — answer it directly and confidently, then steer to a call
-- If they showed interest — capitalize immediately, offer a specific time slot
-- If they pushed back — acknowledge, reframe the value, then ask a question back
+- If they asked a question  answer it directly and confidently, then steer to a call
+- If they showed interest  capitalize immediately, offer a specific time slot
+- If they pushed back  acknowledge, reframe the value, then ask a question back
 - 4-5 lines MAX
 - End with a question or a specific call-to-action
 - Sound like a real person, not a bot
@@ -314,7 +314,7 @@ Return ONLY valid JSON:
             </td>
             <td style="padding-left:14px">
               <p style="margin:0;font-weight:600;font-size:14px;color:#111827">${agentName}</p>
-              <p style="margin:2px 0 0;font-size:12px;color:#6b7280">Growth Consultant · ${companyName}</p>
+              <p style="margin:2px 0 0;font-size:12px;color:#6b7280">Growth Consultant  ${companyName}</p>
               <p style="margin:4px 0 0;font-size:12px;color:#4f46e5">${senderEmail}</p>
             </td>
           </tr>
@@ -351,7 +351,7 @@ Return ONLY valid JSON:
           <tr>
             <td>
               <p style="margin:0;font-size:11px;color:#9ca3af">
-                © 2025 ${companyName} ·
+                 2025 ${companyName} 
                 <a href="https://stems-frontend-theta.vercel.app" style="color:#4f46e5;text-decoration:none">stems-frontend-theta.vercel.app</a>
               </p>
             </td>
@@ -377,10 +377,10 @@ Return ONLY valid JSON:
 
 const emailAgent = new EmailAgent();
 
-// ── Express App ───────────────────────────────────────────────────────────────
+//  Express App 
 async function startEmailAgent() {
   await mongoose.connect(process.env.MONGODB_URI, { serverSelectionTimeoutMS: 5000 });
-  console.log('✅  MongoDB connected');
+  console.log('  MongoDB connected');
 
   const app = express();
   app.use(helmet({ crossOriginResourcePolicy: false }));
@@ -394,12 +394,12 @@ async function startEmailAgent() {
   app.use(express.json({ limit: '2mb' }));
   app.use(rateLimit({ windowMs: 60_000, max: 300 }));
 
-  // ── Resend Webhook — inbound email reply received ──
-  // Set in Resend Dashboard → Webhooks → email.replied
+  //  Resend Webhook  inbound email reply received 
+  // Set in Resend Dashboard  Webhooks  email.replied
   app.post('/webhook/resend', async (req, res) => {
     res.sendStatus(200);
     const event = req.body;
-    console.log('📩 Resend webhook:', event?.type);
+    console.log(' Resend webhook:', event?.type);
 
     if (event?.type === 'email.replied') {
       handleInboundReply(event).catch(console.error);
@@ -412,10 +412,10 @@ async function startEmailAgent() {
     }
   });
 
-  // ── Health ──
+  //  Health 
   app.get('/health', (_req, res) => res.json({ ok: true, agent: AGENT_NAME, ts: new Date() }));
 
-  // ── Send single email ──
+  //  Send single email 
   // POST /api/email/send  { "to": "lead@email.com", "name": "Rahul", "business": "Real estate" }
   app.post('/api/email/send', async (req, res) => {
     const owner = ownerFromReq(req);
@@ -454,7 +454,7 @@ async function startEmailAgent() {
     }
   });
 
-  // ── Bulk email campaign ──
+  //  Bulk email campaign 
   // POST /api/email/campaign  { "leads": [...], "type": "cold_outreach" }
   app.post('/api/email/campaign', async (req, res) => {
     const owner = ownerFromReq(req);
@@ -483,26 +483,26 @@ async function startEmailAgent() {
           console.error(`Email failed for ${lead.email}:`, e.message);
         }
       }
-      console.log(`📢 Email campaign done — sent: ${sent}, failed: ${failed}`);
+      console.log(` Email campaign done  sent: ${sent}, failed: ${failed}`);
     })();
   });
 
 
-  // ── Email logs ──
+  //  Email logs 
   app.get('/api/email/logs', async (req, res) => {
     const owner = ownerFromReq(req);
     const logs = await EmailLog.find(ownerScope(owner)).sort({ sentAt: -1 }).limit(200).lean();
     res.json(logs);
   });
 
-  // ── All leads (shared with WhatsApp agent) ──
+  //  All leads (shared with WhatsApp agent) 
   app.get('/api/leads', async (req, res) => {
     const owner = ownerFromReq(req);
     const leads = await Lead.find(ownerScope(owner)).sort({ leadScore: -1 }).limit(200).lean();
     res.json(leads);
   });
 
-  // ── Stats ──
+  //  Stats 
   app.get('/api/stats', async (req, res) => {
     const owner = ownerFromReq(req);
     const [totalLeads, emailsSent, opened, replied] = await Promise.all([
@@ -517,7 +517,7 @@ async function startEmailAgent() {
     });
   });
 
-  // ── Cron: Day 3 follow-up @ 10 AM ──
+  //  Cron: Day 3 follow-up @ 10 AM 
   cron.schedule('0 10 * * *', async () => {
     const threeDaysAgo = new Date(Date.now() - 3 * 86_400_000);
     const fourDaysAgo  = new Date(Date.now() - 4 * 86_400_000);
@@ -531,7 +531,7 @@ async function startEmailAgent() {
       status:          'contacted',
     }).lean();
 
-    console.log(`🔁 Day-3 follow-up: ${leads.length} leads`);
+    console.log(` Day-3 follow-up: ${leads.length} leads`);
     for (const lead of leads) {
       try {
         const { subject, body } = await emailAgent.writeEmail(lead, 'followup_day3', {}, context);
@@ -542,7 +542,7 @@ async function startEmailAgent() {
     }
   });
 
-  // ── Cron: Day 7 breakup email @ 11 AM ──
+  //  Cron: Day 7 breakup email @ 11 AM 
   cron.schedule('0 11 * * *', async () => {
     const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000);
     const eightDaysAgo = new Date(Date.now() - 8 * 86_400_000);
@@ -555,7 +555,7 @@ async function startEmailAgent() {
       status:          'contacted',
     }).lean();
 
-    console.log(`💔 Day-7 breakup: ${leads.length} leads`);
+    console.log(` Day-7 breakup: ${leads.length} leads`);
     for (const lead of leads) {
       try {
         const { subject, body } = await emailAgent.writeEmail(lead, 'followup_day7', {}, context);
@@ -566,7 +566,7 @@ async function startEmailAgent() {
     }
   });
 
-  // ── Error handler ──
+  //  Error handler 
   app.use((err, _req, res, _next) => {
     console.error('Email Agent error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -574,19 +574,19 @@ async function startEmailAgent() {
 
   const PORT = parseInt(process.env.EMAIL_PORT) || 3001;
   app.listen(PORT, () => {
-    console.log(`\n📧  ${AGENT_NAME} is LIVE on port ${PORT}`);
-    console.log(`📌  Resend Webhook → POST https://your-domain.com/webhook/resend`);
-    console.log(`📊  Stats          → GET  http://localhost:${PORT}/api/stats`);
-    console.log(`👥  Leads          → GET  http://localhost:${PORT}/api/leads\n`);
+    console.log(`\n  ${AGENT_NAME} is LIVE on port ${PORT}`);
+    console.log(`  Resend Webhook  POST https://your-domain.com/webhook/resend`);
+    console.log(`  Stats           GET  http://localhost:${PORT}/api/stats`);
+    console.log(`  Leads           GET  http://localhost:${PORT}/api/leads\n`);
   });
 }
 
-// ── Handle inbound reply ──────────────────────────────────────────────────────
+//  Handle inbound reply 
 async function handleInboundReply(event) {
   const { from_email, from_name, subject, text } = event?.data || {};
   if (!from_email) return;
 
-  console.log(`📬 Reply from: ${from_email} | Subject: ${subject}`);
+  console.log(` Reply from: ${from_email} | Subject: ${subject}`);
 
   const eventEmailId = event?.data?.email_id || event?.data?.emailId || '';
   const repliedTo = String(event?.data?.to_email || event?.data?.to || '').trim().toLowerCase();
@@ -628,11 +628,11 @@ async function handleInboundReply(event) {
   await Conversation.create(ownerScope(owner, { leadId: from_email, channel: 'email', role: 'assistant', content: replyBody, subject: replySubject }));
 }
 
-// ── Graceful shutdown ─────────────────────────────────────────────────────────
+//  Graceful shutdown 
 process.on('SIGINT', async () => {
   await mongoose.disconnect();
-  console.log('\n👋  Email Agent stopped.');
+  console.log('\n  Email Agent stopped.');
   process.exit(0);
 });
 
-startEmailAgent().catch((e) => { console.error('❌ Startup failed:', e.message); process.exit(1); });
+startEmailAgent().catch((e) => { console.error(' Startup failed:', e.message); process.exit(1); });
