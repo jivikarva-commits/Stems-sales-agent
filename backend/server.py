@@ -1185,69 +1185,130 @@ async def update_agent_settings(agent_type: str, request: Request):
 # ════════════════════════════════════════════════════════════════
 @api_router.get("/whatsapp/conversations")
 async def wa_conversations():
+    owner = current_user_email()
+
+    # Get leads from Node WA agent (UserProfile collection via Node API)
     real_leads = await node_get_owner(f"{WA_URL}/api/leads")
     if not isinstance(real_leads, list):
-        return []
-    
-    # Deduplicate by bare phone number (remove + prefix duplicates)
-    seen = set()
-    unique_leads = []
-    for lead in real_leads:
-        uid = lead.get("userId", "")
-        bare = uid.lstrip("+")
-        if bare not in seen and bare:
-            seen.add(bare)
-            # Prefer the + version if available, else use as-is
-            uid_plus = "+" + bare
-            uid_bare = bare
-            lead["_canonical"] = uid_plus  # use +91... as canonical
-            unique_leads.append(lead)
-    
-    convos = []
-    for lead in unique_leads[:20]:
-        uid_plus = lead["_canonical"]
-        uid_bare = uid_plus.lstrip("+")
-        # Fetch latest message across both formats
-        last = (await db.conversations.find_one(scoped_query({"userId": uid_plus}, include_legacy_for_owner=True), {"_id":0}, sort=[("timestamp",-1)])
-                or await db.conversations.find_one(scoped_query({"userId": uid_bare}, include_legacy_for_owner=True), {"_id":0}, sort=[("timestamp",-1)]))
-        count = (await db.conversations.count_documents(scoped_query({"userId": uid_plus}, include_legacy_for_owner=True)) +
-                 await db.conversations.count_documents(scoped_query({"userId": uid_bare}, include_legacy_for_owner=True)))
-        if count <= 0:
+        real_leads = []
+
+    # Also directly query MongoDB conversations for this owner
+    all_convos_cursor = db.conversations.find(
+        {"owner_email": owner},
+        {"_id": 0, "userId": 1, "content": 1, "role": 1, "timestamp": 1}
+    ).sort("timestamp", -1).limit(500)
+    all_convos = await all_convos_cursor.to_list(500)
+
+    # Build a map: bare_phone -> {last_msg, count, timestamp}
+    phone_data: dict = {}
+    for c in all_convos:
+        uid = str(c.get("userId", "")).lstrip("+")
+        if not uid:
             continue
+        if uid not in phone_data:
+            phone_data[uid] = {
+                "last_message": c.get("content", ""),
+                "timestamp": c.get("timestamp", ""),
+                "count": 1,
+            }
+        else:
+            phone_data[uid]["count"] += 1
+
+    # FIX 3: Pull profiles directly from MongoDB to get pushName/name fields
+    # (Node /api/leads might not include pushName)
+    profile_docs = await db.userprofiles.find(
+        {"owner_email": owner},
+        {"_id": 0, "userId": 1, "name": 1, "pushName": 1, "leadScore": 1, "status": 1, "lastInteraction": 1}
+    ).to_list(500)
+
+    profile_map: dict = {}
+    for p in profile_docs:
+        uid = str(p.get("userId", "")).lstrip("+")
+        if uid:
+            profile_map[uid] = p
+
+    # Also include any leads from Node API
+    lead_map: dict = {}
+    for lead in (real_leads if isinstance(real_leads, list) else []):
+        uid = str(lead.get("userId", "")).lstrip("+")
+        if uid:
+            lead_map[uid] = lead
+
+    # Merge: include any phone with conversations OR known lead/profile
+    all_phones = set(phone_data.keys()) | set(lead_map.keys()) | set(profile_map.keys())
+
+    convos = []
+    for bare in all_phones:
+        lead = lead_map.get(bare, {})
+        profile = profile_map.get(bare, {})
+        data = phone_data.get(bare, {})
+        uid_plus = "+" + bare
+
+        # FIX 3: Use pushName > name > phone number as display name
+        display_name = (
+            profile.get("pushName") or
+            profile.get("name") or
+            lead.get("name") or
+            bare
+        )
+
         convos.append({
             "lead_id":       uid_plus,
-            "lead_name":     lead.get("name") or uid_bare,
+            "lead_name":     display_name,
             "company":       lead.get("business", ""),
-            "last_message":  last.get("content", "") if last else "",
-            "timestamp":     last.get("timestamp", "") if last else lead.get("lastInteraction", ""),
-            "status":        lead.get("status", "new"),
-            "message_count": count,
-            "lead_score":    lead.get("leadScore", 0),
+            "last_message":  data.get("last_message", ""),
+            "timestamp":     data.get("timestamp", "") or profile.get("lastInteraction", "") or lead.get("lastInteraction", ""),
+            "status":        lead.get("status", profile.get("status", "new")),
+            "message_count": data.get("count", 0),
+            "lead_score":    lead.get("leadScore", profile.get("leadScore", 0)),
         })
-    # Sort by timestamp descending
+
     convos.sort(key=lambda x: str(x.get("timestamp") or ""), reverse=True)
-    return convos
+    return convos[:50]
 
 @api_router.get("/whatsapp/conversations/{lid}")
 async def wa_thread(lid: str):
-    # FIX: Try both formats — +918767431502 and 918767431502
+    owner = current_user_email()
     lid_plus = "+" + lid if not lid.startswith("+") else lid
     lid_bare = lid.lstrip("+")
 
+    # Query by owner_email + any known userId/lidAlias for this contact
     msgs = await db.conversations.find(
-        scoped_query({"userId": {"$in": [lid_plus, lid_bare]}}, include_legacy_for_owner=True), {"_id": 0}
-    ).sort("timestamp", 1).to_list(200)
+        {"owner_email": owner, "$or": [
+            {"userId": {"$in": [lid_plus, lid_bare]}},
+            {"lidAlias": {"$in": [lid_plus, lid_bare]}},
+        ]},
+        {"_id": 0}
+    ).sort("timestamp", 1).to_list(300)
 
-    lead = (await db.userprofiles.find_one(scoped_query({"userId": {"$in": [lid_plus, lid_bare]}}, include_legacy_for_owner=True), {"_id": 0})
-            or await db.leads.find_one(scoped_query({"id": lid}, include_legacy_for_owner=True), {"_id": 0}))
+    # Fallback: scoped query
+    if not msgs:
+        msgs = await db.conversations.find(
+            scoped_query({"$or": [
+                {"userId": {"$in": [lid_plus, lid_bare]}},
+                {"lidAlias": {"$in": [lid_plus, lid_bare]}},
+            ]}, include_legacy_for_owner=True),
+            {"_id": 0}
+        ).sort("timestamp", 1).to_list(300)
 
-    # Normalize messages to have role field frontend expects
+    lead = (
+        await db.userprofiles.find_one(
+            {"owner_email": owner, "$or": [
+                {"userId": {"$in": [lid_plus, lid_bare]}},
+                {"lidAlias": {"$in": [lid_plus, lid_bare]}},
+            ]}, {"_id": 0}
+        )
+        or await db.userprofiles.find_one(
+            scoped_query({"userId": {"$in": [lid_plus, lid_bare]}}, include_legacy_for_owner=True), {"_id": 0}
+        )
+    )
+
     normalized = []
     for m in msgs:
         normalized.append({
             "role":      m.get("role", "user"),
             "content":   m.get("content", ""),
-            "timestamp": m.get("timestamp", ""),
+            "timestamp": str(m.get("timestamp", "")),
             "messageId": m.get("messageId", ""),
         })
     return {"lead": lead, "messages": normalized}
@@ -1361,6 +1422,25 @@ async def wa_status():
 async def wa_logout():
     result = await node_post_owner(f"{WA_URL}/api/whatsapp/logout", {})
     return result if isinstance(result, dict) else {"success": False}
+
+# ── Per-user custom Agent Config (proxied to Node) ──────────────────────────
+@api_router.get("/whatsapp/agent-config")
+async def get_agent_config():
+    user_required()
+    result = await node_get_owner(f"{WA_URL}/api/agent-config")
+    return result if isinstance(result, dict) else {
+        "agent_name": "", "agent_description": "", "reply_scope": "all",
+        "reply_keywords": [], "configured": False
+    }
+
+@api_router.post("/whatsapp/agent-config")
+async def save_agent_config(request: Request):
+    user_required()
+    body = await request.json()
+    result = await node_post_owner(f"{WA_URL}/api/agent-config", body)
+    if isinstance(result, dict) and result.get("error"):
+        raise HTTPException(status_code=400, detail=result.get("detail") or result.get("error"))
+    return result
 
 @api_router.get("/whatsapp/qr-stream")
 async def wa_qr_stream(request: Request):

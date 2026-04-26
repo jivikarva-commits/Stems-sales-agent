@@ -24,27 +24,77 @@ export default function WhatsAppAgent() {
   const [outMsg, setOutMsg] = useState("");
   const [sending, setSending] = useState(false);
 
+  // Per-user agent config
+  const [agentCfg, setAgentCfg] = useState({
+    agent_name: "", agent_description: "", reply_scope: "all", reply_keywords: [], configured: false,
+  });
+  const [keywordsInput, setKeywordsInput] = useState("");
+  const [savingCfg, setSavingCfg] = useState(false);
+  const [cfgSaved, setCfgSaved] = useState(false);
+
   useEffect(() => {
     Promise.all([
       api.get("/agents/whatsapp/status"),
       api.get("/whatsapp/conversations"),
       api.get("/whatsapp/status").catch(() => ({ data: { connected: false, state: "disconnected" } })),
       api.get("/auth/me").catch(() => ({ data: {} })),
+      api.get("/whatsapp/agent-config").catch(() => ({ data: {} })),
     ])
-      .then(([a, c, ws, me]) => {
+      .then(([a, c, ws, me, cfg]) => {
         setAgent(a.data);
         setWaState(ws.data || { connected: false, state: "disconnected" });
         setProfileCtx({
           business_name: me?.data?.business_name || "",
           messaging_tier: me?.data?.messaging_tier || "",
         });
-        // c.data is the array directly from FastAPI
         const convList = Array.isArray(c.data) ? c.data : [];
         setConversations(convList);
+        const cfgData = cfg?.data || {};
+        setAgentCfg({
+          agent_name: cfgData.agent_name || me?.data?.agent_name || "",
+          agent_description: cfgData.agent_description || "",
+          reply_scope: cfgData.reply_scope || "all",
+          reply_keywords: cfgData.reply_keywords || [],
+          configured: !!cfgData.configured,
+        });
+        setKeywordsInput((cfgData.reply_keywords || []).join(", "));
       })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
+
+  const saveAgentCfg = async () => {
+    if (!agentCfg.agent_name.trim()) {
+      alert("Agent name is required.");
+      return;
+    }
+    if (!agentCfg.agent_description.trim() || agentCfg.agent_description.trim().length < 20) {
+      alert("Please describe your agent in at least 20 characters — your own words.");
+      return;
+    }
+    setSavingCfg(true);
+    setCfgSaved(false);
+    try {
+      const keywords = keywordsInput
+        .split(/[,\n]/)
+        .map((k) => k.trim().toLowerCase())
+        .filter(Boolean);
+      await api.post("/whatsapp/agent-config", {
+        agent_name: agentCfg.agent_name.trim(),
+        agent_description: agentCfg.agent_description.trim(),
+        reply_scope: agentCfg.reply_scope === "keywords" ? "keywords" : "all",
+        reply_keywords: keywords,
+      });
+      setAgentCfg((prev) => ({ ...prev, reply_keywords: keywords, configured: true }));
+      setCfgSaved(true);
+      setTimeout(() => setCfgSaved(false), 3000);
+    } catch (e) {
+      console.error(e);
+      alert("Failed to save agent config: " + (e?.response?.data?.detail || e.message));
+    } finally {
+      setSavingCfg(false);
+    }
+  };
 
   useEffect(() => {
     if (!connecting && !qrCode) return undefined;
@@ -307,37 +357,110 @@ export default function WhatsAppAgent() {
 
         <TabsContent value="settings">
           <Card className="bg-slate-800 border-slate-700/50">
-            <CardHeader><CardTitle className="text-base text-slate-200">WhatsApp Agent Settings</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle className="text-base text-slate-200">Your AI Agent</CardTitle>
+              <p className="text-xs text-slate-400">
+                Define your agent in your own words. The agent will reply to WhatsApp messages using only what you write here.
+              </p>
+            </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-slate-900 rounded-lg p-3">
-                  <p className="text-[10px] text-slate-500 uppercase tracking-wider">Provider</p>
-                  <p className="text-sm text-slate-200 mt-0.5">Baileys (WhatsApp Web)</p>
+              {!agentCfg.configured && (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-300">
+                  Setup required — please describe your agent below before it starts replying.
                 </div>
-                <div className="bg-slate-900 rounded-lg p-3">
-                  <p className="text-[10px] text-slate-500 uppercase tracking-wider">AI Model</p>
-                  <p className="text-sm text-slate-200 mt-0.5">Claude Sonnet 4</p>
-                </div>
-                <div className="bg-slate-900 rounded-lg p-3">
-                  <p className="text-[10px] text-slate-500 uppercase tracking-wider">Agent Name</p>
-                  <p className="text-sm text-slate-200 mt-0.5">Arjun</p>
-                </div>
-                <div className="bg-slate-900 rounded-lg p-3">
-                  <p className="text-[10px] text-slate-500 uppercase tracking-wider">Language</p>
-                  <p className="text-sm text-slate-200 mt-0.5">Hinglish / English</p>
+              )}
+
+              <div className="space-y-1.5">
+                <label className="text-xs text-slate-400 uppercase tracking-wider">Agent Name</label>
+                <Input
+                  value={agentCfg.agent_name}
+                  onChange={(e) => setAgentCfg((p) => ({ ...p, agent_name: e.target.value }))}
+                  placeholder="e.g. Maya, Arjun, Sam"
+                  className="bg-slate-900 border-slate-700 text-slate-200"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs text-slate-400 uppercase tracking-wider">
+                  Agent Description (your own words — what should the agent do, who do you sell to, what's your tone?)
+                </label>
+                <textarea
+                  rows={6}
+                  value={agentCfg.agent_description}
+                  onChange={(e) => setAgentCfg((p) => ({ ...p, agent_description: e.target.value }))}
+                  placeholder="Example: I run a real-estate agency in Mumbai. You should help leads find apartments by asking about their budget, location preference, and family size. Be friendly, use Hinglish, and never push them. End conversations by suggesting a site visit."
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 p-3 text-sm text-slate-200 placeholder:text-slate-500 outline-none focus:border-blue-400"
+                />
+                <p className="text-[10px] text-slate-500">
+                  Minimum 20 characters. The agent only knows what you write here.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs text-slate-400 uppercase tracking-wider">Reply Scope</label>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setAgentCfg((p) => ({ ...p, reply_scope: "all" }))}
+                    className={`flex-1 rounded-md border px-3 py-2 text-xs text-left transition ${
+                      agentCfg.reply_scope === "all"
+                        ? "border-blue-400/60 bg-blue-500/15 text-blue-100"
+                        : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-600"
+                    }`}
+                  >
+                    <div className="font-medium">Reply to all messages</div>
+                    <div className="text-[10px] mt-0.5 opacity-75">Agent responds to every incoming message</div>
+                  </button>
+                  <button
+                    onClick={() => setAgentCfg((p) => ({ ...p, reply_scope: "keywords" }))}
+                    className={`flex-1 rounded-md border px-3 py-2 text-xs text-left transition ${
+                      agentCfg.reply_scope === "keywords"
+                        ? "border-blue-400/60 bg-blue-500/15 text-blue-100"
+                        : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-600"
+                    }`}
+                  >
+                    <div className="font-medium">Reply to specific keywords only</div>
+                    <div className="text-[10px] mt-0.5 opacity-75">Define keywords below</div>
+                  </button>
                 </div>
               </div>
-              <div className="flex items-center justify-between py-2">
-                <div><p className="text-sm text-slate-200">Auto-reply</p><p className="text-xs text-slate-500">Automatically reply to incoming messages</p></div>
-                <Switch defaultChecked />
+
+              {agentCfg.reply_scope === "keywords" && (
+                <div className="space-y-1.5">
+                  <label className="text-xs text-slate-400 uppercase tracking-wider">
+                    Keywords (comma-separated — agent only replies if message contains one of these)
+                  </label>
+                  <Input
+                    value={keywordsInput}
+                    onChange={(e) => setKeywordsInput(e.target.value)}
+                    placeholder="price, demo, book, available, info"
+                    className="bg-slate-900 border-slate-700 text-slate-200"
+                  />
+                </div>
+              )}
+
+              <div className="flex items-center gap-3 pt-2">
+                <Button
+                  onClick={saveAgentCfg}
+                  disabled={savingCfg}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                >
+                  {savingCfg ? "Saving..." : "Save Agent Config"}
+                </Button>
+                {cfgSaved && <span className="text-sm text-emerald-400">Saved successfully</span>}
               </div>
-              <div className="flex items-center justify-between py-2">
-                <div><p className="text-sm text-slate-200">Lead Scoring</p><p className="text-xs text-slate-500">Auto-score leads based on conversation</p></div>
-                <Switch defaultChecked />
-              </div>
-              <div className="flex items-center justify-between py-2">
-                <div><p className="text-sm text-slate-200">Re-engagement</p><p className="text-xs text-slate-500">Auto follow-up cold leads after 3 days</p></div>
-                <Switch defaultChecked />
+
+              <div className="border-t border-slate-700/50 pt-4">
+                <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">Provider Info</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-slate-900 rounded-lg p-3">
+                    <p className="text-[10px] text-slate-500 uppercase tracking-wider">Provider</p>
+                    <p className="text-sm text-slate-200 mt-0.5">Baileys (WhatsApp Web)</p>
+                  </div>
+                  <div className="bg-slate-900 rounded-lg p-3">
+                    <p className="text-[10px] text-slate-500 uppercase tracking-wider">AI Model</p>
+                    <p className="text-sm text-slate-200 mt-0.5">Claude Sonnet 4</p>
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
@@ -76,13 +76,22 @@ export default function AgentSetupPage() {
     };
   }, [navigate]);
 
-  useEffect(() => {
-    if (!connecting && !qrCode) return undefined;
+  // Use a ref so the EventSource lifecycle is NOT tied to state changes.
+  // This prevents the stream from being torn down every time connecting/qrCode changes.
+  const esRef = useRef(null);
+
+  const startQrStream = () => {
+    // Close any existing stream first
+    if (esRef.current) {
+      esRef.current.close();
+      esRef.current = null;
+    }
+
     const sessionId = localStorage.getItem("session_id");
     const streamBase =
-      process.env.VITE_API_URL ||
       process.env.REACT_APP_BACKEND_URL ||
       process.env.VITE_BACKEND_URL ||
+      process.env.VITE_API_URL ||
       "https://stems-sales-agent.onrender.com";
 
     const toQrImageSrc = (value) => {
@@ -92,7 +101,10 @@ export default function AgentSetupPage() {
       return `data:image/png;base64,${raw}`;
     };
 
-    const es = new EventSource(`${streamBase}/api/whatsapp/qr-stream?session_id=${encodeURIComponent(sessionId || "")}`);
+    const es = new EventSource(
+      `${streamBase}/api/whatsapp/qr-stream?session_id=${encodeURIComponent(sessionId || "")}`
+    );
+    esRef.current = es;
 
     const handlePayload = (payload) => {
       if (!payload || typeof payload !== "object") return;
@@ -102,8 +114,8 @@ export default function AgentSetupPage() {
         if (normalizedQr) {
           setQrCode(normalizedQr);
           setError("");
-          setWaState((prev) => ({ ...prev, state: "qr", connected: false }));
-          setConnecting(true);
+          setConnecting(false);
+          setWaState((prev) => ({ ...prev, state: "qr_ready", connected: false }));
         }
         return;
       }
@@ -112,54 +124,47 @@ export default function AgentSetupPage() {
         const stateValue = payload.data;
         const connected = stateValue === "connected";
         setWaState((prev) => ({ ...prev, state: stateValue, connected }));
-
         if (connected) {
           setConnecting(false);
           setQrCode("");
-        } else if (stateValue === "error") {
-          if (!qrCode) {
-            setConnecting(false);
-          }
+          // Close stream — no longer needed
+          es.close();
+          esRef.current = null;
         }
       }
     };
 
     es.onmessage = (evt) => {
-      try {
-        const payload = JSON.parse(evt.data);
-        handlePayload(payload);
-      } catch (_e) {
-        // Some SSE servers may send non-JSON strings; ignore those safely.
-      }
+      try { handlePayload(JSON.parse(evt.data)); } catch (_e) {}
     };
-
     es.addEventListener("qr", (evt) => {
       try {
-        const payload = JSON.parse(evt.data);
-        handlePayload(payload.event ? payload : { event: "qr", data: payload.data ?? evt.data });
-      } catch (_e) {
-        handlePayload({ event: "qr", data: evt.data });
-      }
+        const p = JSON.parse(evt.data);
+        handlePayload(p.event ? p : { event: "qr", data: p.data ?? evt.data });
+      } catch (_e) { handlePayload({ event: "qr", data: evt.data }); }
     });
-
     es.addEventListener("status", (evt) => {
       try {
-        const payload = JSON.parse(evt.data);
-        handlePayload(payload.event ? payload : { event: "status", data: payload.data ?? evt.data });
-      } catch (_e) {
-        handlePayload({ event: "status", data: evt.data });
-      }
+        const p = JSON.parse(evt.data);
+        handlePayload(p.event ? p : { event: "status", data: p.data ?? evt.data });
+      } catch (_e) { handlePayload({ event: "status", data: evt.data }); }
     });
-
     es.onerror = () => {
-      // Do not force UI into error/disconnected if QR is already present.
-      if (!qrCode) {
-        setConnecting(false);
-      }
+      // Don't kill the stream on transient errors — browser will auto-reconnect SSE.
+      // Only mark error if we have no QR yet.
+      setQrCode((current) => {
+        if (!current) setConnecting(false);
+        return current;
+      });
     };
+  };
 
-    return () => es.close();
-  }, [connecting, qrCode]);
+  // Cleanup stream on unmount
+  useEffect(() => {
+    return () => {
+      if (esRef.current) { esRef.current.close(); esRef.current = null; }
+    };
+  }, []);
 
   const saveProfile = async (onboarding_completed) => {
     await api.post("/onboarding/profile", {
@@ -247,8 +252,11 @@ export default function AgentSetupPage() {
       await api.post("/whatsapp/init-connection");
       setConnecting(true);
       setQrCode("");
+      // Start the SSE stream AFTER init-connection succeeds
+      startQrStream();
     } catch (_e) {
       setError("Unable to generate WhatsApp QR code.");
+      setConnecting(false);
     } finally {
       setSaving(false);
     }
