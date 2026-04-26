@@ -24,6 +24,12 @@ const {
   Browsers,
 } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
+const { MongoClient } = require('mongodb');
+const {
+  useMongoAuthState,
+  clearMongoAuthState,
+  importFileSessionIntoMongo,
+} = require('./wa-auth-mongo');
 require('dotenv').config();
 
 const REQUIRED_ENV = ['CLAUDE_API_KEY', 'MONGODB_URI'];
@@ -33,6 +39,37 @@ REQUIRED_ENV.forEach((k) => {
     process.exit(1);
   }
 });
+
+// ── MongoDB-backed Baileys auth state ────────────────────────────────────
+// We open a SECOND connection to a separate database (configurable) so the
+// auth keys are isolated from app data. The connection string defaults to the
+// main MONGODB_URI but uses a different database (`stems-wa-auth`).
+const WA_AUTH_DB_NAME = process.env.WA_AUTH_DB_NAME || 'stems-wa-auth';
+const WA_AUTH_COLLECTION = process.env.WA_AUTH_COLLECTION || 'wa_auth';
+
+let _waAuthClient = null;
+let _waAuthCollection = null;
+
+async function getWaAuthCollection() {
+  if (_waAuthCollection) return _waAuthCollection;
+  _waAuthClient = new MongoClient(process.env.MONGODB_URI);
+  await _waAuthClient.connect();
+  const db = _waAuthClient.db(WA_AUTH_DB_NAME);
+  _waAuthCollection = db.collection(WA_AUTH_COLLECTION);
+  // Compound unique index — one document per (owner, type, id) tuple.
+  // Tolerate the case where an index with the same key but a different name
+  // already exists from a previous run.
+  try {
+    await _waAuthCollection.createIndex(
+      { owner_email: 1, type: 1, id: 1 },
+      { unique: true }
+    );
+  } catch (e) {
+    if (e?.code !== 85) console.warn('[WA-AUTH] createIndex warning:', e.message);
+  }
+  console.log(`[WA-AUTH] Mongo auth ready: db=${WA_AUTH_DB_NAME} collection=${WA_AUTH_COLLECTION}`);
+  return _waAuthCollection;
+}
 
 const AGENT_NAME = 'Stems Sales Agent';
 const DEFAULT_OWNER = (process.env.PRIMARY_OWNER_EMAIL || 'samerkarwande3@gmail.com').trim().toLowerCase();
@@ -304,10 +341,34 @@ class BaileysSessionManager {
     if (session.reconnectTimer) { clearTimeout(session.reconnectTimer); session.reconnectTimer = null; }
     session.isShuttingDown = false;
     session.state = 'connecting';
-    const authDir = this.sessionPath(session.ownerEmail);
-    if (!fs.existsSync(authDir)) fs.mkdirSync(authDir, { recursive: true });
-
-    const { state, saveCreds } = await useMultiFileAuthState(authDir);
+    // ── MongoDB-backed auth state (works on Render free tier, no disk needed) ─
+    // Falls back to file-based auth when WA_AUTH_BACKEND=file (local-dev escape hatch).
+    let state, saveCreds;
+    if ((process.env.WA_AUTH_BACKEND || 'mongo').toLowerCase() === 'file') {
+      const authDir = this.sessionPath(session.ownerEmail);
+      if (!fs.existsSync(authDir)) fs.mkdirSync(authDir, { recursive: true });
+      ({ state, saveCreds } = await useMultiFileAuthState(authDir));
+    } else {
+      const coll = await getWaAuthCollection();
+      // One-time migrate: if a file session exists for this owner but Mongo has
+      // no creds yet, copy the files into Mongo so the user does not re-scan QR.
+      try {
+        const fileDir = this.sessionPath(session.ownerEmail);
+        const credsExist = await coll.findOne(
+          { owner_email: session.ownerEmail, type: 'creds', id: '' },
+          { projection: { _id: 1 } }
+        );
+        if (!credsExist && fs.existsSync(fileDir)) {
+          const result = await importFileSessionIntoMongo(coll, session.ownerEmail, fileDir);
+          if (result.imported > 0) {
+            console.log(`[WA-AUTH] migrated ${result.imported}/${result.total} files for ${session.ownerEmail}`);
+          }
+        }
+      } catch (e) {
+        console.error('[WA-AUTH] file->mongo migration error (non-fatal):', e?.message);
+      }
+      ({ state, saveCreds } = await useMongoAuthState(coll, session.ownerEmail));
+    }
     let version;
     try {
       const latest = await Promise.race([
@@ -803,8 +864,16 @@ class BaileysSessionManager {
   }
 
   async clearAuth(ownerEmail) {
+    // Clear Mongo-stored auth (primary)
+    try {
+      const coll = await getWaAuthCollection();
+      await clearMongoAuthState(coll, ownerEmail);
+    } catch (e) { console.error('[WA-AUTH] clearMongoAuthState err:', e?.message); }
+    // Also clear file-based session if present (for cleanup after migration)
     const authDir = this.sessionPath(ownerEmail);
-    if (fs.existsSync(authDir)) fs.rmSync(authDir, { recursive: true, force: true });
+    if (fs.existsSync(authDir)) {
+      try { fs.rmSync(authDir, { recursive: true, force: true }); } catch (_) {}
+    }
   }
 }
 
@@ -1159,6 +1228,10 @@ async function startServer() {
   });
 }
 
-process.on('SIGINT', async () => { await mongoose.disconnect(); process.exit(0); });
+process.on('SIGINT', async () => {
+  try { await mongoose.disconnect(); } catch (_) {}
+  try { if (_waAuthClient) await _waAuthClient.close(); } catch (_) {}
+  process.exit(0);
+});
 
 startServer().catch((e) => { console.error('Startup failed:', e); process.exit(1); });

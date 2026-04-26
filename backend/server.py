@@ -1,5 +1,5 @@
 """
-STEMS AI SALES AGENT — Python Backend (Port 8000)
+STEMS AI SALES AGENT â€” Python Backend (Port 8000)
 FIX v4: Real email logs, real Vapi calls, proper WA conversation fetch
 """
 from fastapi import FastAPI, APIRouter, UploadFile, File, HTTPException, Query, BackgroundTasks
@@ -427,7 +427,7 @@ async def node_get(url: str):
         r = await http.get(url)
         return r.json()
     except Exception as e:
-        logger.warning(f"Node unreachable: {url} — {e}")
+        logger.warning(f"Node unreachable: {url} â€” {e}")
         return {}
 
 async def node_post(url: str, payload: dict):
@@ -444,10 +444,10 @@ async def node_post(url: str, payload: dict):
                 detail = str(parsed.get("error") or parsed.get("detail") or detail)
         except Exception:
             pass
-        logger.warning(f"Node POST failed: {url} — HTTP {status}: {detail}")
+        logger.warning(f"Node POST failed: {url} â€” HTTP {status}: {detail}")
         return {"error": f"HTTP {status}", "status_code": status, "detail": detail}
     except Exception as e:
-        logger.warning(f"Node POST failed: {url} — {e}")
+        logger.warning(f"Node POST failed: {url} â€” {e}")
         return {"error": str(e)}
 
 async def node_delete(url: str):
@@ -458,10 +458,10 @@ async def node_delete(url: str):
         r.raise_for_status()
         return r.json()
     except httpx.HTTPStatusError as e:
-        logger.warning(f"Node DELETE failed: {url} — HTTP {e.response.status_code}: {e.response.text}")
+        logger.warning(f"Node DELETE failed: {url} â€” HTTP {e.response.status_code}: {e.response.text}")
         return {"error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
     except Exception as e:
-        logger.warning(f"Node DELETE failed: {url} — {e}")
+        logger.warning(f"Node DELETE failed: {url} â€” {e}")
         return {"error": str(e)}
 
 async def node_delete_owner(url: str):
@@ -472,10 +472,10 @@ async def node_delete_owner(url: str):
         r.raise_for_status()
         return r.json()
     except httpx.HTTPStatusError as e:
-        logger.warning(f"Node owner DELETE failed: {url} — HTTP {e.response.status_code}: {e.response.text}")
+        logger.warning(f"Node owner DELETE failed: {url} â€” HTTP {e.response.status_code}: {e.response.text}")
         return {"error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
     except Exception as e:
-        logger.warning(f"Node owner DELETE failed: {url} — {e}")
+        logger.warning(f"Node owner DELETE failed: {url} â€” {e}")
         return {"error": str(e)}
 
 async def node_get_owner(url: str):
@@ -486,7 +486,7 @@ async def node_get_with_owner(url: str, owner_email: str):
         r = await http.get(url, headers={"X-Owner-Email": (owner_email or "").strip().lower()})
         return r.json()
     except Exception as e:
-        logger.warning(f"Node owner GET failed: {url} — {e}")
+        logger.warning(f"Node owner GET failed: {url} â€” {e}")
         return {}
 
 async def node_post_owner(url: str, payload: dict):
@@ -506,10 +506,10 @@ async def node_post_with_owner(url: str, payload: dict, owner_email: str):
                 detail = str(parsed.get("error") or parsed.get("detail") or detail)
         except Exception:
             pass
-        logger.warning(f"Node owner POST failed: {url} — HTTP {status}: {detail}")
+        logger.warning(f"Node owner POST failed: {url} â€” HTTP {status}: {detail}")
         return {"error": f"HTTP {status}", "status_code": status, "detail": detail}
     except Exception as e:
-        logger.warning(f"Node owner POST failed: {url} — {e}")
+        logger.warning(f"Node owner POST failed: {url} â€” {e}")
         return {"error": str(e)}
 
 async def verify_google_credential(credential: str) -> Dict[str, Any]:
@@ -737,7 +737,7 @@ def metric(payload: dict, *keys: str, default: int = 0) -> int:
             return int(value)
     return default
 
-# ── Pydantic Models ──────────────────────────────────────────────────────────
+# â”€â”€ Pydantic Models â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class AgentSetupRequest(BaseModel):
     type: str
     credentials: Dict[str, Any] = {}
@@ -790,7 +790,7 @@ class OnboardingProfileRequest(BaseModel):
     messaging_tier: str
     onboarding_completed: Optional[bool] = None
 
-# ── Seed Helpers ─────────────────────────────────────────────────────────────
+# â”€â”€ Seed Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async def ensure_agents():
     if await db.agents.count_documents({}) > 0:
         return
@@ -995,9 +995,9 @@ async def shutdown():
     mongo_client.close()
     await http.aclose()
 
-# ════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # DASHBOARD
-# ════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 @api_router.get("/dashboard/stats")
 async def dashboard_stats():
     wa_users = await db.userprofiles.count_documents(scoped_query(include_legacy_for_owner=True))
@@ -1053,9 +1053,9 @@ async def dashboard_activity():
     items.sort(key=lambda x: str(x.get("timestamp", "")), reverse=True)
     return items[:15]
 
-# ════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # AGENTS
-# ════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 @api_router.get("/agents")
 async def list_agents():
     agents = await db.agents.find(scoped_query(include_legacy_for_owner=True), {"_id": 0}).to_list(10)
@@ -1180,9 +1180,9 @@ async def update_agent_settings(agent_type: str, request: Request):
     )
     return await db.agents.find_one(scoped_query({"type": agent_type}, include_legacy_for_owner=True), {"_id": 0})
 
-# ════════════════════════════════════════════════════════════════
-# WHATSAPP — FIX: both +91... and 91... format support
-# ════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# WHATSAPP â€” FIX: both +91... and 91... format support
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 @api_router.get("/whatsapp/conversations")
 async def wa_conversations():
     owner = current_user_email()
@@ -1366,7 +1366,7 @@ async def send_whatsapp(data: OutboundMessageRequest):
 
 @api_router.post("/whatsapp/send/template")
 async def send_whatsapp_template(data: TemplateMessageRequest):
-    """Route through Node WA agent — uses correct FROM number and language"""
+    """Route through Node WA agent â€” uses correct FROM number and language"""
     template_name = (data.template or YCLOUD_TEMPLATE_NAME or "stems_business_intro").strip()
     result = await node_post_owner(f"{WA_URL}/api/outbound/template", {
         "to": data.to,
@@ -1423,7 +1423,7 @@ async def wa_logout():
     result = await node_post_owner(f"{WA_URL}/api/whatsapp/logout", {})
     return result if isinstance(result, dict) else {"success": False}
 
-# ── Per-user custom Agent Config (proxied to Node) ──────────────────────────
+# â”€â”€ Per-user custom Agent Config (proxied to Node) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @api_router.get("/whatsapp/agent-config")
 async def get_agent_config():
     user_required()
@@ -1471,9 +1471,9 @@ async def wa_qr_stream(request: Request):
             yield f"data: {{\"event\":\"status\",\"data\":\"error\",\"error\":\"{str(e)}\"}}\n\n"
     return StreamingResponse(event_source(), media_type="text/event-stream")
 
-# ════════════════════════════════════════════════════════════════
-# EMAIL — FIX: map sentAt → timestamp, add lead_name + subject
-# ════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# EMAIL â€” FIX: map sentAt â†’ timestamp, add lead_name + subject
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 @api_router.get("/email/logs")
 async def email_logs():
     raw = await db.emaillogs.find(scoped_query(include_legacy_for_owner=True)).sort("sentAt", -1).limit(200).to_list(200)
@@ -1530,9 +1530,9 @@ async def send_email(data: SingleEmailRequest):
     })
     return result
 
-# ════════════════════════════════════════════════════════════════
-# CALLS — FIX: Real Vapi API data, NO fake fallback
-# ════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# CALLS â€” FIX: Real Vapi API data, NO fake fallback
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 async def fetch_real_vapi_calls(vapi_api_key: str = "") -> list:
     """Fetch real calls from Vapi API directly"""
     # Strict tenant safety: never fallback to global VAPI key for user-facing logs.
@@ -1593,7 +1593,7 @@ async def fetch_real_vapi_calls(vapi_api_key: str = "") -> list:
                 "lead_name":      prof.get("name", phone) if prof else phone,
                 "company":        prof.get("business", prof.get("company", "")) if prof else "",
                 "phone":          phone,
-                "duration":       f"{duration_s // 60}:{duration_s % 60:02d}" if duration_s else "—",
+                "duration":       f"{duration_s // 60}:{duration_s % 60:02d}" if duration_s else "â€”",
                 "outcome":        outcome,
                 "timestamp":      start_time,
                 "has_recording":  bool(call.get("recordingUrl")),
@@ -1628,7 +1628,7 @@ async def call_logs():
                 "lead_name":      prof.get("name", phone) if prof else phone,
                 "company":        prof.get("business", "") if prof else "",
                 "phone":          phone,
-                "duration":       f"{secs//60}:{secs%60:02d}" if secs else "—",
+                "duration":       f"{secs//60}:{secs%60:02d}" if secs else "â€”",
                 "outcome":        call.get("status", "completed"),
                 "timestamp":      call.get("createdAt", now_str()),
                 "has_recording":  bool(call.get("recordingUrl") or call.get("recording_url")),
@@ -1657,7 +1657,7 @@ async def call_logs():
 
             merged.append({
                 **call,
-                "duration": v.get("duration") if (call.get("duration") in {"—", "", None}) else call.get("duration"),
+                "duration": v.get("duration") if (call.get("duration") in {"â€”", "", None}) else call.get("duration"),
                 "outcome": v.get("outcome") if call.get("outcome") in {"initiated", "ringing", "in-progress", "", None} else call.get("outcome"),
                 "timestamp": call.get("timestamp") or v.get("timestamp"),
                 "recording_url": call.get("recording_url") or v.get("recording_url", ""),
@@ -1847,9 +1847,9 @@ async def get_call_config():
         "credentials": safe_cfg,
     }
 
-# ════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # CAMPAIGNS, CRM, REPORTS, INSIGHTS, BILLING, WEBHOOKS, HEALTH
-# ════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 class CampaignChatRequest(BaseModel):
     message: str
     history: List[Dict[str, Any]] = []
@@ -1979,13 +1979,13 @@ async def upload_csv(cid: str, file: UploadFile = File(...)):
     uid = user_required()
     leads  = []
     for row in reader:
-        # Normalize keys — strip spaces, lowercase
+        # Normalize keys â€” strip spaces, lowercase
         norm = {k.strip().lower(): str(v).strip() for k, v in row.items()}
 
         # Phone: accept "phone number", "phone", "mobile", "contact", "number", "ph"
         phone = (norm.get("phone number") or norm.get("phone") or norm.get("mobile")
                  or norm.get("contact") or norm.get("number") or norm.get("ph") or "")
-        # Clean phone — digits only, add 91 if 10 digits
+        # Clean phone â€” digits only, add 91 if 10 digits
         phone = "".join(c for c in phone if c.isdigit())
         if len(phone) == 10:
             phone = "91" + phone  # add India country code
@@ -2375,7 +2375,7 @@ async def generate_report(data: ReportGenerateRequest):
     return doc
 
 async def _build_report(period: str) -> dict:
-    """100% real data — no fake numbers"""
+    """100% real data â€” no fake numbers"""
     wa_s = await node_get_owner(f"{WA_URL}/api/stats")
     em_s = await node_get_owner(f"{EMAIL_URL}/api/stats")
     ca_s = await node_get_owner(f"{CALL_URL}/api/stats")
@@ -2463,6 +2463,11 @@ async def wh_email(request: Request):
 async def wh_call(request: Request):
     await node_post(f"{CALL_URL}/webhook/vapi", await request.json())
     return {"status": "forwarded"}
+
+@app.get("/api/health")
+async def api_health():
+    """Lightweight health endpoint for Render's health checks — no external deps."""
+    return {"ok": True, "service": "stems-backend"}
 
 @app.get("/health")
 async def health():
