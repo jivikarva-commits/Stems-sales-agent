@@ -11,12 +11,11 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 from contextvars import ContextVar
 from cryptography.fernet import Fernet, InvalidToken
-import os, logging, csv, io, uuid, httpx, asyncio, base64, hashlib, subprocess, shutil, time
+import os, logging, csv, io, uuid, httpx, asyncio, base64, hashlib
 from pathlib import Path
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
-from urllib.parse import urlparse
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -56,18 +55,6 @@ _current_user_email: ContextVar[str] = ContextVar("current_user_email", default=
 
 _credential_key = base64.urlsafe_b64encode(hashlib.sha256(CREDENTIAL_ENCRYPTION_SECRET.encode("utf-8")).digest())
 _credential_fernet = Fernet(_credential_key)
-
-REPO_ROOT = ROOT_DIR.parent
-AGENT_PORTS = {"whatsapp": 3000, "email": 3001, "call": 3002}
-AGENT_SCRIPTS = {
-    "whatsapp": REPO_ROOT / "agents" / "whatsapp-agent.js",
-    "email": REPO_ROOT / "agents" / "email-agent.js",
-    "call": REPO_ROOT / "agents" / "call-agent.js",
-}
-AGENT_PROCS: Dict[str, subprocess.Popen] = {}
-NODE_BIN = shutil.which("node")
-EMBED_AGENTS_MODE = (os.environ.get("EMBED_AGENTS", "auto") or "auto").strip().lower()
-EMBED_AGENTS_ENABLED = False
 
 def new_id():  return str(uuid.uuid4())
 def now_str(): return datetime.now(timezone.utc).isoformat()
@@ -750,87 +737,6 @@ def metric(payload: dict, *keys: str, default: int = 0) -> int:
             return int(value)
     return default
 
-def _is_local_url(url: str) -> bool:
-    if not url:
-        return True
-    try:
-        host = urlparse(url).hostname or ""
-    except Exception:
-        return False
-    return host in {"localhost", "127.0.0.1", "0.0.0.0"}
-
-def _should_embed_agents() -> bool:
-    mode = EMBED_AGENTS_MODE
-    if mode in {"1", "true", "yes", "on"}:
-        return True
-    if mode in {"0", "false", "no", "off"}:
-        return False
-    return _is_local_url(WA_URL) and _is_local_url(EMAIL_URL) and _is_local_url(CALL_URL)
-
-def _apply_embedded_agent_urls():
-    global WA_URL, EMAIL_URL, CALL_URL
-    WA_URL = f"http://127.0.0.1:{AGENT_PORTS['whatsapp']}"
-    EMAIL_URL = f"http://127.0.0.1:{AGENT_PORTS['email']}"
-    CALL_URL = f"http://127.0.0.1:{AGENT_PORTS['call']}"
-
-def _build_agent_env(port: int) -> Dict[str, str]:
-    env = os.environ.copy()
-    env["PORT"] = str(port)
-    if env.get("MONGODB_URI") and not env.get("MONGO_URL"):
-        env["MONGO_URL"] = env["MONGODB_URI"]
-    if env.get("MONGO_URL") and not env.get("MONGODB_URI"):
-        env["MONGODB_URI"] = env["MONGO_URL"]
-    return env
-
-def _start_agent_process(name: str, script_path: Path, port: int):
-    if not NODE_BIN:
-        logger.error("Node.js not found. Unable to start %s agent.", name)
-        return
-    if not script_path.exists():
-        logger.error("Agent script missing for %s: %s", name, script_path)
-        return
-    existing = AGENT_PROCS.get(name)
-    if existing and existing.poll() is None:
-        return
-    env = _build_agent_env(port)
-    try:
-        AGENT_PROCS[name] = subprocess.Popen(
-            [NODE_BIN, str(script_path)],
-            cwd=str(REPO_ROOT),
-            env=env,
-        )
-        logger.info("Embedded %s agent started on port %s", name, port)
-    except Exception as exc:
-        logger.error("Failed to start %s agent: %s", name, exc)
-
-def start_embedded_agents():
-    for name, script in AGENT_SCRIPTS.items():
-        _start_agent_process(name, script, AGENT_PORTS[name])
-
-def stop_embedded_agents():
-    for name, proc in list(AGENT_PROCS.items()):
-        if not proc or proc.poll() is not None:
-            continue
-        try:
-            proc.terminate()
-            proc.wait(timeout=8)
-        except Exception:
-            try:
-                proc.kill()
-            except Exception:
-                pass
-        logger.info("Embedded %s agent stopped", name)
-    AGENT_PROCS.clear()
-
-async def wait_for_agent_ready(url: str, timeout: float = 15.0) -> bool:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        health = await node_get(f"{url}/health")
-        if is_service_live(health):
-            return True
-        await asyncio.sleep(0.6)
-    return False
-
 # â”€â”€ Pydantic Models â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class AgentSetupRequest(BaseModel):
     type: str
@@ -1082,20 +988,10 @@ async def startup():
     await db.calllogs.create_index([("user_id", 1), ("createdAt", -1)])
     await db.integrations.create_index([("user_id", 1), ("type", 1)], unique=True)
     await db.integrations.create_index([("owner_email", 1), ("type", 1)])
-    global EMBED_AGENTS_ENABLED
-    if _should_embed_agents():
-        if NODE_BIN:
-            _apply_embedded_agent_urls()
-            start_embedded_agents()
-            EMBED_AGENTS_ENABLED = True
-        else:
-            logger.error("EMBED_AGENTS is enabled but Node.js is not available.")
     logger.info(f"Stems backend ready | WA:{WA_URL} | Email:{EMAIL_URL} | Call:{CALL_URL}")
 
 @app.on_event("shutdown")
 async def shutdown():
-    if EMBED_AGENTS_ENABLED:
-        stop_embedded_agents()
     mongo_client.close()
     await http.aclose()
 
@@ -1487,13 +1383,10 @@ async def send_whatsapp_template(data: TemplateMessageRequest):
 async def wa_init_connection():
     health = await node_get(f"{WA_URL}/health")
     if not is_service_live(health):
-        if EMBED_AGENTS_ENABLED and await wait_for_agent_ready(WA_URL):
-            health = {"ok": True}
-        else:
-            raise HTTPException(
-                status_code=503,
-                detail="WhatsApp agent is offline or unreachable. Start embedded agents or deploy the Node WA service.",
-            )
+        raise HTTPException(
+            status_code=503,
+            detail="WhatsApp agent is offline or unreachable. Deploy the Node WA service and set WHATSAPP_AGENT_URL/RENDER_EXTERNAL_URL.",
+        )
     result = await node_post_owner(f"{WA_URL}/api/whatsapp/init-connection", {})
     if isinstance(result, dict) and result.get("error"):
         status_code = int(result.get("status_code") or 500)

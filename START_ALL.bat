@@ -15,15 +15,19 @@ for /f "tokens=5" %%a in ('netstat -ano 2^>nul ^| findstr ":3000 :3001 :3002 :80
 )
 timeout /t 2 /nobreak >nul
 
-echo [1/4] Starting Python Backend + Embedded Agents (port 8000)...
-start "STEMS - Python Backend" cmd /k "set EMBED_AGENTS=true && cd /d C:\Users\dines\Documents\stems-sales-agent\backend && python -m uvicorn server:app --host 0.0.0.0 --port 8000 --reload"
+echo [1/4] Starting Node Agents (WA:3000 + Email:3001 + Call:3002)...
+start "STEMS - Node Agents" cmd /k "cd /d C:\Users\dines\Documents\stems-sales-agent && node index.js"
+timeout /t 5 /nobreak >nul
+
+echo [2/4] Starting Python Backend (port 8000)...
+start "STEMS - Python Backend" cmd /k "cd /d C:\Users\dines\Documents\stems-sales-agent\backend && python -m uvicorn server:app --host 0.0.0.0 --port 8000 --reload"
 timeout /t 4 /nobreak >nul
 
-echo [2/4] Starting Ngrok (tunnel to port 3000)...
+echo [3/4] Starting Ngrok (tunnel to port 3000)...
 start "STEMS - Ngrok" cmd /k "ngrok http 3000 --host-header=localhost"
 timeout /t 3 /nobreak >nul
 
-echo [3/4] Starting Frontend (port 3003)...
+echo [4/4] Starting Frontend (port 3003)...
 start "STEMS - Frontend" cmd /k "cd /d C:\Users\dines\Documents\stems-sales-agent\frontend && npm start"
 
 echo.

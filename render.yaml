@@ -21,7 +21,7 @@ services:
     runtime: python
     rootDir: backend
     plan: free
-    buildCommand: pip install -r requirements.txt && cd .. && npm install --omit=dev
+    buildCommand: pip install -r requirements.txt
     startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
     envVars:
@@ -31,17 +31,18 @@ services:
         value: stems-agents-data
       - key: CORS_ORIGINS
         value: "*"
-      # Run agents inside the backend container
-      - key: EMBED_AGENTS
-        value: "true"
+      # Public URL of the WhatsApp Node service — Render injects the full https URL
       - key: WHATSAPP_AGENT_URL
-        value: http://127.0.0.1:3000
+        fromService:
+          type: web
+          name: stems-sales-agent-wa
+          envVarKey: RENDER_EXTERNAL_URL
       # Email + Call agents not deployed — point to localhost so backend
       # marks them "unavailable" without crashing.
       - key: EMAIL_AGENT_URL
-        value: http://127.0.0.1:3001
+        value: http://localhost:3001
       - key: CALL_AGENT_URL
-        value: http://127.0.0.1:3002
+        value: http://localhost:3002
       # Secrets — set manually in Render dashboard during initial setup
       - key: MONGO_URL
         sync: false
