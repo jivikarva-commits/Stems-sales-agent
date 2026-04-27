@@ -21,7 +21,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 MONGO_URL = os.environ.get("MONGO_URL") or os.environ.get("MONGODB_URI")
-DB_NAME   = os.environ.get("DB_NAME", "stems agents data")
+DB_NAME   = os.environ.get("DB_NAME", "stems-agents-data")
 
 if not MONGO_URL:
     raise RuntimeError("Missing MONGO_URL/MONGODB_URI environment variable")
@@ -2489,7 +2489,7 @@ async def auth_middleware(request: Request, call_next):
     path = request.url.path or ""
     if not path.startswith("/api"):
         return await call_next(request)
-    if path in {"/api/auth/google"} or path.startswith("/api/webhooks/"):
+    if path in {"/api/auth/google", "/api/health", "/health"} or path.startswith("/api/webhooks/"):
         return await call_next(request)
 
     auth = request.headers.get("authorization", "")
