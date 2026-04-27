@@ -1177,54 +1177,75 @@ async function startServer() {
   });
 
   const PORT = parseInt(process.env.PORT, 10) || 3000;
-  app.listen(PORT, async () => {
+  app.listen(PORT, () => {
     console.log(`\n${AGENT_NAME} LIVE on port ${PORT}`);
     console.log(`  QR SSE : GET  http://localhost:${PORT}/api/whatsapp/qr-stream`);
     console.log(`  Status : GET  http://localhost:${PORT}/api/whatsapp/status`);
     console.log(`  Health : GET  http://localhost:${PORT}/health\n`);
 
-    // ── BUG 2 FIX: Auto-restore all existing WhatsApp sessions on server start ──
-    // Scan sessions/ folder — every subdirectory is an owner whose Baileys creds
-    // are stored on disk. Init each so the messages.upsert listener is registered
-    // immediately. No outbound message needed to "wake up" the agent.
-    try {
-      const dirs = fs.readdirSync(SESSIONS_DIR, { withFileTypes: true })
-        .filter((d) => d.isDirectory())
-        .map((d) => d.name);
+    // ── Auto-restore WhatsApp sessions in the BACKGROUND ─────────────────
+    // Don't block app.listen — run async so health checks pass immediately
+    // even if Mongo is slow or auto-restore hits errors.
+    setImmediate(async () => {
+      try {
+        const ownerEmails = new Set();
 
-      const owners = dirs
-        .map((name) => name.replace(/_/g, '@').replace(/@(?=[^@]*$)/, '.').toLowerCase())
-        // Folder format: user_gmail.com → undo to user@gmail.com
-        // The replace above is brittle, so let's also accept anything with @ already
-        .filter(Boolean);
-
-      // Better: match each folder back to a known owner via DB lookup
-      const knownOwners = await mongoose.connection.collection('agent_configs')
-        .find({}, { projection: { owner_email: 1 } }).toArray();
-      const ownerEmails = new Set(knownOwners.map((c) => c.owner_email).filter(Boolean));
-
-      // Also pick up any owners from session folder names — convert back from "_" format
-      for (const dir of dirs) {
-        // sessionPath replaces non-alphanumeric/_-. with _. Best-effort reverse:
-        // folder "samerkarwande3_gmail.com" → "samerkarwande3@gmail.com"
-        const candidate = dir.replace(/_(?=[a-z0-9-]+\.[a-z]{2,}$)/, '@');
-        if (candidate.includes('@') && candidate.includes('.')) {
-          ownerEmails.add(candidate);
-        }
-      }
-
-      console.log(`[WA] Auto-restoring ${ownerEmails.size} session(s):`, [...ownerEmails]);
-      for (const owner of ownerEmails) {
+        // 1. Discover owners from MongoDB `wa_auth` collection (primary source on Render)
         try {
-          await waManager.init(owner);
-          console.log(`[WA] ✅ Restored session for ${owner}`);
+          const coll = await getWaAuthCollection();
+          const mongoOwners = await coll.distinct('owner_email');
+          for (const o of mongoOwners) if (o) ownerEmails.add(String(o).toLowerCase());
         } catch (e) {
-          console.error(`[WA] Failed to restore ${owner}:`, e?.message);
+          console.warn('[WA] Could not list Mongo auth owners:', e?.message);
         }
+
+        // 2. Also discover from agent_configs — covers users who configured
+        //    but haven't connected yet (will show QR when they hit init-connection)
+        try {
+          const configs = await mongoose.connection.collection('agent_configs')
+            .find({}, { projection: { owner_email: 1 } }).toArray();
+          for (const c of configs) if (c?.owner_email) ownerEmails.add(String(c.owner_email).toLowerCase());
+        } catch (_) {}
+
+        // 3. Local sessions folder (only useful for local dev with file backend)
+        if ((process.env.WA_AUTH_BACKEND || 'mongo').toLowerCase() === 'file') {
+          try {
+            if (fs.existsSync(SESSIONS_DIR)) {
+              const dirs = fs.readdirSync(SESSIONS_DIR, { withFileTypes: true })
+                .filter((d) => d.isDirectory()).map((d) => d.name);
+              for (const dir of dirs) {
+                const candidate = dir.replace(/_(?=[a-z0-9-]+\.[a-z]{2,}$)/, '@');
+                if (candidate.includes('@')) ownerEmails.add(candidate.toLowerCase());
+              }
+            }
+          } catch (_) {}
+        }
+
+        if (ownerEmails.size === 0) {
+          console.log('[WA] No existing sessions found — waiting for first user to connect via /api/whatsapp/init-connection');
+          return;
+        }
+
+        console.log(`[WA] Auto-restoring ${ownerEmails.size} session(s):`, [...ownerEmails]);
+
+        // Restore each — but DO NOT block on individual failures
+        for (const owner of ownerEmails) {
+          try {
+            // Race init against a 25s timeout — Render dyno startup is fragile
+            await Promise.race([
+              waManager.init(owner),
+              new Promise((_, rej) => setTimeout(() => rej(new Error('init_timeout_25s')), 25000)),
+            ]);
+            console.log(`[WA] ✅ Restored session for ${owner}`);
+          } catch (e) {
+            console.error(`[WA] Failed to restore ${owner}:`, e?.message);
+            // Keep going — one bad owner shouldn't block others
+          }
+        }
+      } catch (e) {
+        console.error('[WA] Auto-restore outer error:', e?.message);
       }
-    } catch (e) {
-      console.error('[WA] Auto-restore failed:', e?.message);
-    }
+    });
   });
 }
 
