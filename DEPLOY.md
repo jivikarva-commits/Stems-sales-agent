@@ -14,10 +14,10 @@ The frontend is deployed separately on Vercel.
 1. Push your code to GitHub if you haven't already.
 2. In Render dashboard click **New → Blueprint**.
 3. Connect the `Stems-sales-agent` repo. Render will read `render.yaml` and propose:
-   - `stems-sales-agent-backend` (Python web service)
-   - `stems-sales-agent-wa` (Node web service with 1 GB persistent disk)
+   - `stems-sales-agent-backend` (Python web service; now embeds all agents)
+   - Optional: `stems-sales-agent-wa` (legacy standalone WA service — can be deleted if using embedded agents)
 4. Render will prompt you to fill in the **secret** environment variables:
-   - `MONGODB_URI` and `MONGO_URL` (paste your Atlas connection string into both — WA agent accepts either)
+   - `MONGODB_URI` and `MONGO_URL` (paste your Atlas connection string into both — agents accept either)
    - `CLAUDE_API_KEY` (required for AI replies; QR login still works without it)
    - `PRIMARY_OWNER_EMAIL`
    - `GOOGLE_CLIENT_ID` (for Sign in with Google)
@@ -26,8 +26,7 @@ The frontend is deployed separately on Vercel.
 
 After deploy:
 - Backend: `https://stems-sales-agent-backend.onrender.com`
-- WA agent: `https://stems-sales-agent-wa.onrender.com`
-- The backend automatically discovers the WA URL via `RENDER_EXTERNAL_URL`.
+- Embedded agents run on localhost inside the backend container (no separate WA service needed).
 
 ## Step 2 — Frontend on Vercel
 
