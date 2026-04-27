@@ -1381,6 +1381,12 @@ async def send_whatsapp_template(data: TemplateMessageRequest):
 
 @api_router.post("/whatsapp/init-connection")
 async def wa_init_connection():
+    health = await node_get(f"{WA_URL}/health")
+    if not is_service_live(health):
+        raise HTTPException(
+            status_code=503,
+            detail="WhatsApp agent is offline or unreachable. Deploy the Node WA service and set WHATSAPP_AGENT_URL/RENDER_EXTERNAL_URL.",
+        )
     result = await node_post_owner(f"{WA_URL}/api/whatsapp/init-connection", {})
     if isinstance(result, dict) and result.get("error"):
         status_code = int(result.get("status_code") or 500)

@@ -17,8 +17,8 @@ The frontend is deployed separately on Vercel.
    - `stems-sales-agent-backend` (Python web service)
    - `stems-sales-agent-wa` (Node web service with 1 GB persistent disk)
 4. Render will prompt you to fill in the **secret** environment variables:
-   - `MONGODB_URI` and `MONGO_URL` (paste your Atlas connection string into both)
-   - `CLAUDE_API_KEY`
+   - `MONGODB_URI` and `MONGO_URL` (paste your Atlas connection string into both — WA agent accepts either)
+   - `CLAUDE_API_KEY` (required for AI replies; QR login still works without it)
    - `PRIMARY_OWNER_EMAIL`
    - `GOOGLE_CLIENT_ID` (for Sign in with Google)
    - Optional: Gmail / Vapi / YCloud secrets if you use those agents

@@ -32,13 +32,14 @@ const {
 } = require('./wa-auth-mongo');
 require('dotenv').config();
 
-const REQUIRED_ENV = ['CLAUDE_API_KEY', 'MONGODB_URI'];
-REQUIRED_ENV.forEach((k) => {
-  if (!process.env[k]) {
-    console.error(`Missing env var: ${k}`);
-    process.exit(1);
-  }
-});
+const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URL;
+if (!MONGO_URI) {
+  console.error('Missing env var: MONGODB_URI or MONGO_URL');
+  process.exit(1);
+}
+if (!process.env.CLAUDE_API_KEY) {
+  console.warn('[WA] CLAUDE_API_KEY is missing — auto-replies disabled until it is set.');
+}
 
 // ── MongoDB-backed Baileys auth state ────────────────────────────────────
 // We open a SECOND connection to a separate database (configurable) so the
@@ -52,7 +53,7 @@ let _waAuthCollection = null;
 
 async function getWaAuthCollection() {
   if (_waAuthCollection) return _waAuthCollection;
-  _waAuthClient = new MongoClient(process.env.MONGODB_URI);
+  _waAuthClient = new MongoClient(MONGO_URI);
   await _waAuthClient.connect();
   const db = _waAuthClient.db(WA_AUTH_DB_NAME);
   _waAuthCollection = db.collection(WA_AUTH_COLLECTION);
@@ -136,10 +137,15 @@ const UserProfile = mongoose.model('UserProfile', userProfileSchema);
 
 class SalesAgent {
   constructor() {
-    this.claude = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
+    this.claude = process.env.CLAUDE_API_KEY
+      ? new Anthropic({ apiKey: process.env.CLAUDE_API_KEY })
+      : null;
   }
 
   async chat(ownerEmail, userId, userMessage) {
+    if (!this.claude) {
+      throw new Error('CLAUDE_API_KEY missing');
+    }
     await this._extractAndUpdateProfile(ownerEmail, userId, userMessage);
     const scope = ownerScope(ownerEmail, { userId });
     const ownerKey = (ownerEmail || DEFAULT_OWNER).toString().trim().toLowerCase();
@@ -887,7 +893,7 @@ function ownerFromReq(req) {
 
 
 async function startServer() {
-  await mongoose.connect(process.env.MONGODB_URI, { serverSelectionTimeoutMS: 5000 });
+  await mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 5000 });
   try { await mongoose.connection.collection('userprofiles').dropIndex('userId_1'); } catch (_) {}
   console.log('MongoDB connected');
 
