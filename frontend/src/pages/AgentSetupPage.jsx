@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Badge } from "../components/ui/badge";
-import api, { backendBaseUrl } from "../lib/api";
+import api, { backendBaseUrl, describeApiError } from "../lib/api";
 
 const TIERS = [
   { value: "250", label: "Tier 250" },
@@ -221,8 +221,8 @@ export default function AgentSetupPage() {
           messaging_tier: form.messaging_tier,
         },
       });
-    } catch (_e) {
-      setError("Unable to save WhatsApp setup.");
+    } catch (e) {
+      setError(describeApiError(e, "Unable to save WhatsApp setup."));
     } finally {
       setSaving(false);
     }
@@ -250,8 +250,8 @@ export default function AgentSetupPage() {
       setQrCode("");
       // Start the SSE stream AFTER init-connection succeeds
       startQrStream();
-    } catch (_e) {
-      setError("Unable to generate WhatsApp QR code.");
+    } catch (e) {
+      setError(describeApiError(e, "Unable to generate WhatsApp QR code."));
       setConnecting(false);
     } finally {
       setSaving(false);

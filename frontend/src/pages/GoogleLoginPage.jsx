@@ -1,21 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "../components/ui/button";
-import api, { warmUpBackend } from "../lib/api";
+import api, { warmUpBackend, describeApiError } from "../lib/api";
 
 const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || "882008866919-n5pb2uatmt49a1rm83f9svu3jootu1vm.apps.googleusercontent.com";
 const GSI_SRC = "https://accounts.google.com/gsi/client";
-
-const describeLoginError = (e) => {
-  if (e?.response?.data?.detail) return e.response.data.detail;
-  if (e?.code === "ECONNABORTED") {
-    return "The server took too long to respond (it may have been asleep). Please try again.";
-  }
-  if (!e?.response) {
-    return "Could not reach the server. Check your connection and try again.";
-  }
-  return e?.message || "Login failed";
-};
 
 export default function GoogleLoginPage() {
   const navigate = useNavigate();
@@ -43,7 +32,7 @@ export default function GoogleLoginPage() {
       window.location.hash = "";
       navigate(user.onboarding_completed ? "/dashboard" : "/agent-setup", { replace: true });
     } catch (e) {
-      setError(describeLoginError(e));
+      setError(describeApiError(e, "Login failed"));
     } finally {
       if (mounted.current) setLoading(false);
     }

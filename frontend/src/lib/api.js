@@ -36,6 +36,21 @@ export const warmUpBackend = () =>
     )
   );
 
+// Pull the useful part out of an axios failure. The backend puts an
+// actionable message in `detail`; dropping it leaves the user staring at a
+// generic "something failed" with no way to tell config from outage.
+export const describeApiError = (e, fallback = "Something went wrong") => {
+  const detail = e?.response?.data?.detail;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (e?.code === "ECONNABORTED") {
+    return "The server took too long to respond (it may have been asleep). Please try again.";
+  }
+  if (!e?.response) {
+    return "Could not reach the server. Check your connection and try again.";
+  }
+  return e?.message || fallback;
+};
+
 api.interceptors.request.use((config) => {
   const sessionId = localStorage.getItem("session_id");
   if (sessionId) {
