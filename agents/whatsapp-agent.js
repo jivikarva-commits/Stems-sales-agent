@@ -477,6 +477,9 @@ class BaileysSessionManager {
           const statusCode = (lastDisconnect?.error instanceof Boom)
             ? lastDisconnect.error.output.statusCode
             : lastDisconnect?.error?.output?.statusCode;
+          const reasonName = Object.keys(DisconnectReason)
+            .find((k) => DisconnectReason[k] === statusCode) || 'unknown';
+          console.log(`[WA] Disconnected owner=${session.ownerEmail} code=${statusCode} reason=${reasonName} attempts=${session.reconnectAttempts} msg=${lastDisconnect?.error?.message || ''}`);
           const loggedOut = statusCode === DisconnectReason.loggedOut;
           if (loggedOut) {
             session.state = 'disconnected';
@@ -1287,19 +1290,16 @@ async function startServer() {
         // 1. Discover owners from MongoDB `wa_auth` collection (primary source on Render)
         try {
           const coll = await getWaAuthCollection();
-          const mongoOwners = await coll.distinct('owner_email');
+          const mongoOwners = await coll.distinct('owner_email', { type: 'creds', id: '' });
           for (const o of mongoOwners) if (o) ownerEmails.add(String(o).toLowerCase());
         } catch (e) {
           console.warn('[WA] Could not list Mongo auth owners:', e?.message);
         }
 
-        // 2. Also discover from agent_configs — covers users who configured
-        //    but haven't connected yet (will show QR when they hit init-connection)
-        try {
-          const configs = await mongoose.connection.collection('agent_configs')
-            .find({}, { projection: { owner_email: 1 } }).toArray();
-          for (const c of configs) if (c?.owner_email) ownerEmails.add(String(c.owner_email).toLowerCase());
-        } catch (_) {}
+        // Owners from agent_configs are deliberately NOT restored here: without
+        // stored credentials all a restore does is open a socket that emits a
+        // new QR every ~20s with nobody watching. They initialise on demand
+        // when the user opens the setup page and hits /init-connection.
 
         // 3. Local sessions folder (only useful for local dev with file backend)
         if ((process.env.WA_AUTH_BACKEND || 'mongo').toLowerCase() === 'file') {
@@ -1342,6 +1342,17 @@ async function startServer() {
     });
   });
 }
+
+// Baileys rejects with "Request Time-out" on an unstable link. Node exits on an
+// unhandled rejection, systemd restarts us, and auto-restore then re-initialises
+// every owner — so one tenant's timeout became a service-wide crash loop that
+// kept interrupting healthy sessions. Log and stay up instead.
+process.on('unhandledRejection', (reason) => {
+  console.error('[WA] Unhandled rejection (staying alive):', reason?.message || reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[WA] Uncaught exception (staying alive):', err?.message || err);
+});
 
 process.on('SIGINT', async () => {
   try { await mongoose.disconnect(); } catch (_) {}
