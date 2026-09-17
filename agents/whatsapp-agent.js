@@ -541,6 +541,7 @@ class BaileysSessionManager {
             //   4. sock.signalRepository.lidMapping.getPNForLID() if available
             //   5. Last resort: skip the message (DON'T save under LID)
             let canonicalPhone = null;
+            let lidOnly = false;
             const senderPn = String(msg.key?.senderPn || '').replace(/[^\d]/g, '');
 
             if (senderPn) {
@@ -570,11 +571,19 @@ class BaileysSessionManager {
               }
 
               if (!canonicalPhone) {
-                // STILL UNRESOLVED — DO NOT save under LID, that creates orphan threads
-                // Wait for contacts.update to fill the mapping. Skip this message for now
-                // but emit a warning so we know.
-                console.log(`[WA] ⚠ Cannot resolve LID ${lid} to phone — skipping message to avoid orphan thread`);
-                continue;
+                // Previously this dropped the message to avoid an orphan thread.
+                // But the lidMap only fills from contacts.update, so after a fresh
+                // pairing every first message from a LID-addressed contact was
+                // silently discarded and the sender got no reply at all.
+                //
+                // An orphan thread is recoverable — migrate-lid.js merges it once
+                // a phone number becomes known. Silence is not. So key the thread
+                // by the LID and answer; the reply goes to remoteJid either way.
+                canonicalPhone = lid;
+                lidOnly = true;
+                // Recorded so the resolution path can be improved: if WhatsApp is
+                // carrying the number in a field we are not reading, it shows here.
+                console.log(`[WA] ⚠ LID ${lid} unresolved — replying anyway, thread keyed by LID. key fields=${Object.keys(msg.key || {}).join(',')}`);
               }
             } else {
               canonicalPhone = remoteJid.split('@')[0];
@@ -585,7 +594,7 @@ class BaileysSessionManager {
 
             console.log(`[WA] ✅ MSG from phone=${canonicalPhone} jid=${remoteJid} name="${pushName}" text="${text.substring(0, 60)}"`);
 
-            this.handleIncomingText(ownerEmail, canonicalPhone, text, msg.key?.id || '', replyJid, pushName)
+            this.handleIncomingText(ownerEmail, canonicalPhone, text, msg.key?.id || '', replyJid, pushName, lidOnly)
               .catch((err) => console.error(`[WA] handleIncomingText error:`, err?.message || err));
           } catch (err) {
             console.error('[WA] messages.upsert error:', err?.message || err);
@@ -726,7 +735,7 @@ class BaileysSessionManager {
     return { messageId: sent?.key?.id || '' };
   }
 
-  async handleIncomingText(ownerEmail, from, body, messageId, replyJid = '', pushName = '') {
+  async handleIncomingText(ownerEmail, from, body, messageId, replyJid = '', pushName = '', lidOnly = false) {
     const inbound = String(body || '').trim();
     if (!inbound) return;
 
@@ -749,6 +758,7 @@ class BaileysSessionManager {
     // ── FIX 3: Upsert profile WITH pushName ────────────────────────────
     try {
       const setFields = { lastInteraction: new Date() };
+      if (lidOnly) setFields.lidOnly = true;
       if (safeName) {
         setFields.pushName = safeName;
         setFields.name = safeName; // also save to legacy "name" field
