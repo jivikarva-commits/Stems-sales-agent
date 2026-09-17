@@ -853,8 +853,21 @@ class BaileysSessionManager {
         console.log(`[WA] Keyword mode but no keywords configured — ignoring message from ${safeFrom}`);
         return;
       }
-      const haystack = inbound.toLowerCase();
-      matchedKeyword = keywords.find((k) => haystack.includes(String(k).toLowerCase())) || null;
+      // Match at a word start, not anywhere in the string. A plain substring
+      // test turns "we are a corporate firm" into a lead for the keyword
+      // "rate", and "costume party" into one for "cost". Requiring the match
+      // to begin a word keeps the useful suffix tolerance ("rate" still
+      // matches "rates") without the false positives.
+      const hay = inbound.toLowerCase();
+      matchedKeyword = keywords.find((k) => {
+        const term = String(k).trim().toLowerCase();
+        if (!term) return false;
+        for (let i = hay.indexOf(term); i !== -1; i = hay.indexOf(term, i + 1)) {
+          const before = i === 0 ? "" : hay[i - 1];
+          if (!before || !/[a-z0-9]/.test(before)) return true;
+        }
+        return false;
+      }) || null;
       if (!matchedKeyword) {
         console.log(`[WA] No keyword match — ignoring message from ${safeFrom}`);
         return;
