@@ -7,7 +7,7 @@ import { Switch } from "../components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "../components/ui/dialog";
 import { MessageCircle, CheckCircle, AlertCircle, Send, Trash2 } from "lucide-react";
-import api from "../lib/api";
+import api, { backendBaseUrl } from "../lib/api";
 
 export default function WhatsAppAgent() {
   const [agent, setAgent] = useState(null);
@@ -99,7 +99,7 @@ export default function WhatsAppAgent() {
   useEffect(() => {
     if (!connecting && !qrCode) return undefined;
     const sessionId = localStorage.getItem("session_id");
-    const streamBase = process.env.REACT_APP_BACKEND_URL || process.env.VITE_BACKEND_URL || process.env.VITE_API_URL || "https://stems-sales-agent.onrender.com";
+    const streamBase = backendBaseUrl;
     const es = new EventSource(`${streamBase}/api/whatsapp/qr-stream?session_id=${encodeURIComponent(sessionId || "")}`);
     es.onmessage = (evt) => {
       try {

@@ -7,15 +7,36 @@ const configuredBackend = normalizeBaseUrl(
   process.env.VITE_BACKEND_URL ||
   process.env.VITE_API_URL
 );
-const defaultBackend = "https://stems-sales-agent.onrender.com";
-const backendCandidates = [configuredBackend, defaultBackend]
+// Render blueprint service (render.yaml) is `stems-sales-agent-backend`; the
+// bare `stems-sales-agent` host is the older service kept as a fallback.
+const primaryBackend = "https://stems-sales-agent-backend.onrender.com";
+const legacyBackend = "https://stems-sales-agent.onrender.com";
+const backendCandidates = [configuredBackend, primaryBackend, legacyBackend]
   .filter(Boolean)
   .filter((url, index, arr) => arr.indexOf(url) === index);
 
+// Render's free plan spins services down after idling, and a cold start can
+// take well over 30s. A short timeout turns that into a bogus "login failed".
+const REQUEST_TIMEOUT_MS = 60000;
+
+// Single source of truth for the backend origin — every direct fetch /
+// EventSource in the app must use this so the SPA never splits its calls
+// across two different backends.
+export const backendBaseUrl = backendCandidates[0];
+
 const api = axios.create({
   baseURL: `${backendCandidates[0]}/api`,
-  timeout: 15000,
+  timeout: REQUEST_TIMEOUT_MS,
 });
+
+// Wake a sleeping backend early (e.g. while the user is in the Google popup)
+// so the request that actually matters does not eat the cold start.
+export const warmUpBackend = () =>
+  Promise.all(
+    backendCandidates.map((url) =>
+      fetch(`${url}/api/health`, { method: "GET", mode: "cors" }).catch(() => null)
+    )
+  );
 
 api.interceptors.request.use((config) => {
   const sessionId = localStorage.getItem("session_id");

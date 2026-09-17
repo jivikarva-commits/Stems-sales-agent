@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Badge } from "../components/ui/badge";
-import api from "../lib/api";
+import api, { backendBaseUrl } from "../lib/api";
 
 const TIERS = [
   { value: "250", label: "Tier 250" },
@@ -88,11 +88,7 @@ export default function AgentSetupPage() {
     }
 
     const sessionId = localStorage.getItem("session_id");
-    const streamBase =
-      process.env.REACT_APP_BACKEND_URL ||
-      process.env.VITE_BACKEND_URL ||
-      process.env.VITE_API_URL ||
-      "https://stems-sales-agent.onrender.com";
+    const streamBase = backendBaseUrl;
 
     const toQrImageSrc = (value) => {
       const raw = String(value || "").trim();
