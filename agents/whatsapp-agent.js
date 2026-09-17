@@ -30,6 +30,7 @@ const {
   clearMongoAuthState,
   importFileSessionIntoMongo,
 } = require('./wa-auth-mongo');
+const sessionLock = require('./wa-session-lock');
 require('dotenv').config();
 
 const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URL;
@@ -70,6 +71,12 @@ async function getWaAuthCollection() {
   }
   console.log(`[WA-AUTH] Mongo auth ready: db=${WA_AUTH_DB_NAME} collection=${WA_AUTH_COLLECTION}`);
   return _waAuthCollection;
+}
+
+// The lock lives in the same database as the auth state it protects.
+async function getWaLockDb() {
+  await getWaAuthCollection();
+  return _waAuthClient.db(WA_AUTH_DB_NAME);
 }
 
 const AGENT_NAME = 'Stems Sales Agent';
@@ -296,6 +303,18 @@ class BaileysSessionManager {
   get(ownerEmail) { return this.sessions.get(ownerEmail); }
 
   async init(ownerEmail) {
+    // Two requests arriving together (the setup page opens the QR stream more
+    // than once) each used to build their own socket for the same credentials,
+    // which is exactly the conflict this class must avoid. Share one attempt.
+    this.initInFlight = this.initInFlight || new Map();
+    const pending = this.initInFlight.get(ownerEmail);
+    if (pending) return pending;
+    const attempt = this._init(ownerEmail).finally(() => this.initInFlight.delete(ownerEmail));
+    this.initInFlight.set(ownerEmail, attempt);
+    return attempt;
+  }
+
+  async _init(ownerEmail) {
     const existing = this.sessions.get(ownerEmail);
     if (existing) {
       const ok = (existing.state === 'connected' && existing.sock)
@@ -383,6 +402,23 @@ class BaileysSessionManager {
     if (session.reconnectTimer) { clearTimeout(session.reconnectTimer); session.reconnectTimer = null; }
     session.isShuttingDown = false;
     session.state = 'connecting';
+
+    // Refuse to connect unless this process owns the session. Without it, a
+    // second deployment (a local run, an old host that came back) opens the
+    // same credentials and WhatsApp kills the session outright.
+    try {
+      const lockDb = await getWaLockDb();
+      const lease = await sessionLock.acquire(lockDb, session.ownerEmail);
+      if (!lease.ok) {
+        session.state = 'locked_elsewhere';
+        session.lastError = `session held by ${lease.heldBy}`;
+        console.error(`[WA-LOCK] ${session.ownerEmail} is held by ${lease.heldBy} (since ${lease.since ? lease.since.toISOString() : 'unknown'}) — not connecting`);
+        this.emit(session, { event: 'status', data: 'locked_elsewhere' });
+        return;
+      }
+    } catch (e) {
+      console.error('[WA-LOCK] acquire failed:', e?.message || e);
+    }
     // ── MongoDB-backed auth state (works on Render free tier, no disk needed) ─
     // Falls back to file-based auth when WA_AUTH_BACKEND=file (local-dev escape hatch).
     let state, saveCreds;
@@ -469,6 +505,11 @@ class BaileysSessionManager {
           const meId = sock.user?.id ? String(sock.user.id) : '';
           session.phone = meId.split(':')[0] || null;
           console.log(`[WA] Connected! owner=${session.ownerEmail} phone=${session.phone}`);
+          getWaLockDb()
+            .then((lockDb) => sessionLock.startHeartbeat(lockDb, session.ownerEmail, (owner) => {
+              console.error(`[WA-LOCK] lost the lease for ${owner} — another instance took over`);
+            }))
+            .catch((e) => console.error('[WA-LOCK] heartbeat start failed:', e?.message || e));
           this.emit(session, { event: 'status', data: 'connected' });
           done();
         }
@@ -481,12 +522,31 @@ class BaileysSessionManager {
           const reasonName = Object.keys(DisconnectReason)
             .find((k) => DisconnectReason[k] === statusCode) || 'unknown';
           console.log(`[WA] Disconnected owner=${session.ownerEmail} code=${statusCode} reason=${reasonName} attempts=${session.reconnectAttempts} msg=${lastDisconnect?.error?.message || ''}`);
-          const loggedOut = statusCode === DisconnectReason.loggedOut;
+          // WhatsApp reports both "you were unlinked" and "someone else took
+          // this session" as 401. Only the first means the credentials are
+          // dead; wiping them on a conflict forced a QR re-scan for something
+          // a reconnect could have recovered.
+          const isConflict = /conflict|replaced/i.test(String(lastDisconnect?.error?.message || ''));
+          const loggedOut = statusCode === DisconnectReason.loggedOut && !isConflict;
+
+          if (statusCode === DisconnectReason.loggedOut && isConflict) {
+            session.state = 'conflict';
+            session.lastError = 'conflict — another client connected with these credentials';
+            console.error(`[WA] CONFLICT for ${session.ownerEmail}: another client is using these credentials. Credentials kept; not reconnecting to avoid fighting over the session.`);
+            this.emit(session, { event: 'status', data: 'conflict' });
+            session.socketEpoch += 1;
+            sessionLock.stopHeartbeat(session.ownerEmail);
+            done();
+            return;
+          }
+
           if (loggedOut) {
             session.state = 'disconnected';
             session.lastError = 'logged_out';
             this.emit(session, { event: 'status', data: 'disconnected' });
             session.socketEpoch += 1;
+            sessionLock.stopHeartbeat(session.ownerEmail);
+            try { await sessionLock.release(await getWaLockDb(), session.ownerEmail); } catch (_) {}
             await this.clearAuth(session.ownerEmail);
             done();
           } else {
@@ -1074,6 +1134,10 @@ async function startServer() {
         reply_scope: cfg?.reply_scope || 'all',
         reply_keywords_count: Array.isArray(cfg?.reply_keywords) ? cfg.reply_keywords.length : 0,
       },
+      lock: {
+        instance_id: sessionLock.INSTANCE_ID,
+        ttl_ms: sessionLock.LOCK_TTL_MS,
+      },
       connection: {
         state: session?.state || 'not_initialised',
         phone: session?.phone || null,
@@ -1370,7 +1434,16 @@ process.on('uncaughtException', (err) => {
   console.error('[WA] Uncaught exception (staying alive):', err?.message || err);
 });
 
+async function shutdown() {
+  try { await sessionLock.releaseAll(await getWaLockDb()); } catch (_) {}
+  try { await mongoose.disconnect(); } catch (_) {}
+  try { if (_waAuthClient) await _waAuthClient.close(); } catch (_) {}
+  process.exit(0);
+}
+process.on('SIGTERM', shutdown);
+
 process.on('SIGINT', async () => {
+  try { await sessionLock.releaseAll(await getWaLockDb()); } catch (_) {}
   try { await mongoose.disconnect(); } catch (_) {}
   try { if (_waAuthClient) await _waAuthClient.close(); } catch (_) {}
   process.exit(0);
