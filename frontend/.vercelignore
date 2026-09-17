@@ -1,0 +1,9 @@
+# Applies when deploying from this directory directly.
+# See the repo-root .vercelignore for the rationale — the important entry is
+# .env, which points at http://localhost:8000 for local development.
+.env
+.env.*
+
+node_modules
+build
+*.log

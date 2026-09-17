@@ -1,0 +1,22 @@
+# Applies when deploying from the repo root (`npx vercel --prod` here).
+# Vercel's Root Directory for this project is `frontend`, so only that
+# subtree is actually built — everything below is either a local-only file
+# or something Vercel regenerates itself.
+
+# Local environment files. frontend/.env points REACT_APP_BACKEND_URL at
+# http://localhost:8000; if it ever reached a build it would be inlined into
+# the production bundle and every API call would fail as mixed content.
+.env
+.env.*
+**/.env
+**/.env.*
+
+# Vercel installs dependencies and runs the build itself.
+node_modules
+**/node_modules
+frontend/build
+
+# Local tooling and noise.
+*.exe
+*.log
+.worktrees
