@@ -120,6 +120,14 @@ const userProfileSchema = new mongoose.Schema({
   lastReplyAt: Date,
   conversationClosed: { type: Boolean, default: false },
   tags: [String],
+  // Lead-capture fields. Without them declared here, Mongoose strict mode
+  // would discard every one of these writes without an error.
+  isLead: { type: Boolean, default: false, index: true },
+  source: { type: String, default: 'whatsapp' },
+  lastMessage: String,
+  matchedKeyword: String,
+  leadCapturedAt: Date,
+  lidOnly: { type: Boolean, default: false },
   owner_email: { type: String, index: true, default: DEFAULT_OWNER },
   user_id: { type: String, index: true, default() { return (this && this.owner_email) || DEFAULT_OWNER; } },
   lastInteraction: Date,
@@ -806,9 +814,8 @@ class BaileysSessionManager {
     const safeName = String(pushName || '').trim();
 
     if (!safeOwner || !safeFrom) { console.error('[WA] Missing owner or from'); return; }
-    console.log(`[WA] STEP1: from=${safeFrom} name="${safeName}" owner=${safeOwner}`);
 
-    // Dedupe by messageId
+    // Dedupe by messageId — WhatsApp re-delivers on reconnect.
     if (safeMsgId) {
       try {
         const dup = await Conversation.findOne({ owner_email: safeOwner, messageId: safeMsgId, role: 'user' }).lean();
@@ -816,134 +823,90 @@ class BaileysSessionManager {
       } catch (e) { console.error('[WA] dedupe err:', e?.message); }
     }
 
-    // ── FIX 3: Upsert profile WITH pushName ────────────────────────────
-    try {
-      const setFields = { lastInteraction: new Date() };
-      if (lidOnly) setFields.lidOnly = true;
-      if (safeName) {
-        setFields.pushName = safeName;
-        setFields.name = safeName; // also save to legacy "name" field
-      }
-      await UserProfile.findOneAndUpdate(
-        ownerScope(safeOwner, { userId: safeFrom }),
-        { $setOnInsert: ownerScope(safeOwner, { userId: safeFrom, createdAt: new Date() }), $set: setFields },
-        { upsert: true }
-      );
-    } catch (e) { console.error('[WA] profile upsert err:', e?.message); }
+    let cfg = null;
+    try { cfg = await mongoose.connection.collection('agent_configs').findOne({ owner_email: safeOwner }); } catch (_) {}
 
-    // Save inbound message
-    try {
-      await Conversation.create(ownerScope(safeOwner, { userId: safeFrom, role: 'user', content: inbound, messageId: safeMsgId }));
-    } catch (e) { console.error('[WA] save err:', e?.message); }
-
-    // Closing keywords — end active conversation
-    const closingPattern = /^(bye|goodbye|thanks|thank you|thank u|ty|no thanks|nahi|band karo|ruk|stop|chalo bye|ok bye)\b/i;
-    if (closingPattern.test(inbound)) {
+    // Opt-out is honoured whatever the keyword rules say: it is a standing
+    // instruction from the contact, not a lead signal.
+    if (/^(unsubscribe|optout|stop)$/i.test(inbound)) {
       try {
         await UserProfile.findOneAndUpdate(
           ownerScope(safeOwner, { userId: safeFrom }),
-          { $set: { activeConversation: false, conversationClosed: true, lastReplyAt: new Date() } }
+          { $set: { marketingOptOut: true, activeConversation: false } },
+          { upsert: true },
         );
-        console.log(`[WA] Conversation closed by user phrase for ${safeFrom}`);
-      } catch (_) {}
-      // Send polite closing reply
-      const target = replyJid || safeFrom;
-      try { await this.sendTextToPhone(safeOwner, safeFrom, target, "Sure, thanks for your time! Reach out anytime."); } catch (_) {}
-      return;
-    }
-
-    // Opt-out
-    if (/^(unsubscribe|optout)$/i.test(inbound)) {
-      try {
-        await UserProfile.findOneAndUpdate(
-          ownerScope(safeOwner, { userId: safeFrom }),
-          { $set: { marketingOptOut: true, activeConversation: false } }
-        );
-        await this.sendText(safeOwner, replyJid || safeFrom, 'You have been unsubscribed.');
+        console.log(`[WA] Opt-out recorded for ${safeFrom}`);
       } catch (e) { console.error('[WA] optout err:', e?.message); }
       return;
     }
 
-    // Read profile
+    // ── Keyword gate ───────────────────────────────────────────────────────
+    // Decides whether this message exists for us at all. Anything that matches
+    // nothing is dropped outright — no lead, no stored conversation — so the
+    // CRM only ever fills with contacts who said something you asked for.
+    const scope = cfg?.reply_scope === 'keywords' ? 'keywords' : 'all';
+    const keywords = Array.isArray(cfg?.reply_keywords) ? cfg.reply_keywords.filter(Boolean) : [];
+    let matchedKeyword = null;
+
+    if (scope === 'keywords') {
+      if (!keywords.length) {
+        console.log(`[WA] Keyword mode but no keywords configured — ignoring message from ${safeFrom}`);
+        return;
+      }
+      const haystack = inbound.toLowerCase();
+      matchedKeyword = keywords.find((k) => haystack.includes(String(k).toLowerCase())) || null;
+      if (!matchedKeyword) {
+        console.log(`[WA] No keyword match — ignoring message from ${safeFrom}`);
+        return;
+      }
+    }
+
+    // ── Lead capture ───────────────────────────────────────────────────────
+    const now = new Date();
+    try {
+      const setFields = {
+        lastInteraction: now,
+        lastMessage: inbound.substring(0, 500),
+        isLead: true,
+        source: 'whatsapp',
+        leadCapturedAt: now,
+      };
+      if (lidOnly) setFields.lidOnly = true;
+      if (matchedKeyword) setFields.matchedKeyword = matchedKeyword;
+      if (safeName) { setFields.pushName = safeName; setFields.name = safeName; }
+
+      await UserProfile.findOneAndUpdate(
+        ownerScope(safeOwner, { userId: safeFrom }),
+        {
+          $setOnInsert: ownerScope(safeOwner, { userId: safeFrom, createdAt: now }),
+          $set: setFields,
+        },
+        { upsert: true },
+      );
+    } catch (e) { console.error('[WA] lead upsert err:', e?.message); }
+
+    try {
+      await Conversation.create(ownerScope(safeOwner, { userId: safeFrom, role: 'user', content: inbound, messageId: safeMsgId }));
+    } catch (e) { console.error('[WA] save err:', e?.message); }
+
+    console.log(`[WA] 🎯 LEAD captured: ${safeFrom} name="${safeName}" keyword="${matchedKeyword || '(scope=all)'}" text="${inbound.substring(0, 60)}"`);
+
+    // ── Auto-reply ─────────────────────────────────────────────────────────
+    // Off unless explicitly enabled. Nothing below runs by default, so no
+    // Claude request is made and the product costs nothing per message.
+    if (!cfg?.auto_reply_enabled) return;
+
     let profile = null;
     try { profile = await UserProfile.findOne(ownerScope(safeOwner, { userId: safeFrom })).lean(); } catch (_) {}
     if (profile?.marketingOptOut) return;
 
-    // ── FIX 2: ACTIVE CONVERSATION LOGIC ──────────────────────────────
-    // If contact is in active conversation, ALWAYS reply (skip keyword check).
-    // Otherwise, check keyword scope. Once keyword matches, mark as active.
-
-    const ACTIVE_TIMEOUT_HOURS = 24;
-    const activeTimeoutMs = ACTIVE_TIMEOUT_HOURS * 60 * 60 * 1000;
-    const now = Date.now();
-
-    // Check if existing active conversation has timed out
-    let isActive = !!profile?.activeConversation;
-    const lastReply = profile?.lastReplyAt ? new Date(profile.lastReplyAt).getTime() : 0;
-    if (isActive && lastReply > 0 && (now - lastReply) > activeTimeoutMs) {
-      console.log(`[WA] Active conversation timed out for ${safeFrom} (>${ACTIVE_TIMEOUT_HOURS}h)`);
-      isActive = false;
-      try {
-        await UserProfile.findOneAndUpdate(
-          ownerScope(safeOwner, { userId: safeFrom }),
-          { $set: { activeConversation: false } }
-        );
-      } catch (_) {}
-    }
-
-    // If conversation was explicitly closed, only re-activate on keyword match
-    if (profile?.conversationClosed) {
-      isActive = false;
-    }
-
-    let cfg = null;
-    try { cfg = await mongoose.connection.collection('agent_configs').findOne({ owner_email: safeOwner }); } catch (_) {}
-
-    let shouldReply = false;
-    if (isActive) {
-      // Already in active convo — always reply, no keyword check
-      shouldReply = true;
-      console.log(`[WA] In active conversation — replying without keyword check`);
-    } else if (cfg?.reply_scope === 'keywords') {
-      const kws = Array.isArray(cfg.reply_keywords) ? cfg.reply_keywords : [];
-      const matched = kws.some((k) => k && inbound.toLowerCase().includes(k));
-      if (matched) {
-        shouldReply = true;
-        console.log(`[WA] Keyword matched — starting active conversation`);
-        // Mark conversation as active for follow-up messages
-        try {
-          await UserProfile.findOneAndUpdate(
-            ownerScope(safeOwner, { userId: safeFrom }),
-            { $set: { activeConversation: true, activeSince: new Date(), conversationClosed: false } }
-          );
-        } catch (_) {}
-      } else {
-        console.log(`[WA] No keyword match — skipping reply`);
-        return;
-      }
-    } else {
-      // Default: reply to all
-      shouldReply = true;
-      // Also mark as active so logic stays consistent
-      try {
-        await UserProfile.findOneAndUpdate(
-          ownerScope(safeOwner, { userId: safeFrom }),
-          { $set: { activeConversation: true, activeSince: profile?.activeSince || new Date(), conversationClosed: false } }
-        );
-      } catch (_) {}
-    }
-
-    if (!shouldReply) return;
-
-    // Human-like typing delay 4-5s
     await new Promise((r) => setTimeout(r, 4000 + Math.floor(Math.random() * 1000)));
 
     let reply = '';
     try {
       reply = await agent.chat(safeOwner, safeFrom, inbound);
-      console.log(`[WA] AI reply: "${reply.substring(0, 80)}"`);
+      console.log(`[WA] AI reply: "${String(reply).substring(0, 80)}"`);
     } catch (e) { console.error('[WA] AI err:', e?.message); return; }
-
     if (!reply?.trim()) return;
 
     const parts = agent.breakIntoMessages(reply);
@@ -953,14 +916,12 @@ class BaileysSessionManager {
       try { await this.sendTextToPhone(safeOwner, safeFrom, target, parts[i]); } catch (e) { console.error(`[WA] send err part ${i}:`, e?.message); }
     }
 
-    // Update lastReplyAt for active-conversation timeout tracking
     try {
       await UserProfile.findOneAndUpdate(
         ownerScope(safeOwner, { userId: safeFrom }),
-        { $set: { lastReplyAt: new Date() } }
+        { $set: { lastReplyAt: new Date() } },
       );
     } catch (_) {}
-
     try { await agent.refreshLeadScore(safeOwner, safeFrom); } catch (_) {}
     console.log(`[WA] ✅ DONE replied to ${safeFrom} parts=${parts.length}`);
   }
@@ -1037,13 +998,15 @@ async function startServer() {
       agent_description: cfg.agent_description || '',
       reply_scope: cfg.reply_scope || 'all',
       reply_keywords: cfg.reply_keywords || [],
+      // Opt-in: the agent captures leads and stays silent unless this is set.
+      auto_reply_enabled: Boolean(cfg.auto_reply_enabled),
       configured: Boolean(cfg.agent_description && cfg.agent_description.trim()),
     });
   });
 
   app.post('/api/agent-config', async (req, res) => {
     const owner = ownerFromReq(req);
-    const { agent_name, agent_description, reply_scope, reply_keywords } = req.body || {};
+    const { agent_name, agent_description, reply_scope, reply_keywords, auto_reply_enabled } = req.body || {};
     if (!agent_name || !agent_description || !String(agent_description).trim()) {
       return res.status(400).json({ error: 'agent_name and agent_description are required' });
     }
@@ -1060,6 +1023,9 @@ async function startServer() {
           agent_description: String(agent_description).trim(),
           reply_scope: scope,
           reply_keywords: keywords,
+          // Only written when the caller actually sends the field, so saving
+          // the agent config from the UI cannot silently flip the switch off.
+          ...(auto_reply_enabled === undefined ? {} : { auto_reply_enabled: auto_reply_enabled === true }),
           updated_at: new Date(),
         },
         $setOnInsert: { created_at: new Date() },
@@ -1133,6 +1099,8 @@ async function startServer() {
         claude_model: process.env.CLAUDE_MODEL || 'claude-opus-5',
         reply_scope: cfg?.reply_scope || 'all',
         reply_keywords_count: Array.isArray(cfg?.reply_keywords) ? cfg.reply_keywords.length : 0,
+        auto_reply_enabled: Boolean(cfg?.auto_reply_enabled),
+        mode: cfg?.auto_reply_enabled ? 'lead capture + auto reply' : 'lead capture only',
       },
       lock: {
         instance_id: sessionLock.INSTANCE_ID,
