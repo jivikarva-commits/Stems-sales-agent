@@ -327,7 +327,7 @@ class BaileysSessionManager {
       if ((process.env.WA_AUTH_BACKEND || 'mongo').toLowerCase() !== 'file') {
         const coll = await getWaAuthCollection();
         hasCreds = !!(await coll.findOne(
-          { owner_email: ownerEmail, type: 'creds', id: '' },
+          { owner_email: ownerEmail, type: 'creds', id: '', 'value.me.id': { $exists: true } },
           { projection: { _id: 1 } }
         ));
       } else {
@@ -1045,8 +1045,9 @@ async function startServer() {
     let credsStored = null;
     try {
       const coll = await getWaAuthCollection();
+      // Paired, not merely present — an unpaired init leaves a placeholder.
       credsStored = !!(await coll.findOne(
-        { owner_email: owner, type: 'creds', id: '' },
+        { owner_email: owner, type: 'creds', id: '', 'value.me.id': { $exists: true } },
         { projection: { _id: 1 } }
       ));
     } catch (_) {}
@@ -1290,7 +1291,11 @@ async function startServer() {
         // 1. Discover owners from MongoDB `wa_auth` collection (primary source on Render)
         try {
           const coll = await getWaAuthCollection();
-          const mongoOwners = await coll.distinct('owner_email', { type: 'creds', id: '' });
+          const mongoOwners = await coll.distinct('owner_email', {
+            type: 'creds',
+            id: '',
+            'value.me.id': { $exists: true },
+          });
           for (const o of mongoOwners) if (o) ownerEmails.add(String(o).toLowerCase());
         } catch (e) {
           console.warn('[WA] Could not list Mongo auth owners:', e?.message);
