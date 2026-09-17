@@ -308,8 +308,43 @@ class BaileysSessionManager {
       this.sessions.delete(ownerEmail);
     }
 
-    // FIX 1: Record session start timestamp — used to ignore old messages after re-login
-    const sessionStartedAt = new Date();
+    // Session start timestamp — messages older than this are ignored, so a fresh
+    // QR scan does not auto-reply to WhatsApp's history dump.
+    //
+    // It must SURVIVE restarts. This host spins the service down when idle; on
+    // wake, WhatsApp delivers everything it queued meanwhile, carrying the
+    // original (older) timestamps. Resetting to `now` on every init silently
+    // dropped every one of those messages. So: restore the saved value when we
+    // already have credentials, and only start from `now` on a first login.
+    //
+    // MAX_BACKLOG_HOURS bounds how far back a restore can reach, so a long
+    // outage cannot trigger a flood of replies to stale messages. Re-replies
+    // are additionally prevented by the messageId dedupe in handleIncomingText.
+    const MAX_BACKLOG_HOURS = Number(process.env.WA_MAX_BACKLOG_HOURS || 24);
+    let sessionStartedAt = new Date();
+    try {
+      let hasCreds = false;
+      if ((process.env.WA_AUTH_BACKEND || 'mongo').toLowerCase() !== 'file') {
+        const coll = await getWaAuthCollection();
+        hasCreds = !!(await coll.findOne(
+          { owner_email: ownerEmail, type: 'creds', id: '' },
+          { projection: { _id: 1 } }
+        ));
+      } else {
+        hasCreds = fs.existsSync(path.join(this.sessionPath(ownerEmail), 'creds.json'));
+      }
+
+      if (hasCreds) {
+        const prior = await SessionStart.findOne({ owner_email: ownerEmail }).lean();
+        const priorStart = prior?.session_started_at ? new Date(prior.session_started_at) : null;
+        if (priorStart && !Number.isNaN(priorStart.getTime())) {
+          const floor = new Date(Date.now() - MAX_BACKLOG_HOURS * 60 * 60 * 1000);
+          sessionStartedAt = priorStart > floor ? priorStart : floor;
+          console.log(`[WA] Restored session start for ${ownerEmail}: ${sessionStartedAt.toISOString()}`);
+        }
+      }
+    } catch (e) { console.error('[WA] sessionStart restore error:', e?.message); }
+
     try {
       await SessionStart.findOneAndUpdate(
         { owner_email: ownerEmail },
@@ -984,6 +1019,59 @@ async function startServer() {
       console.error(`[WA init] owner=${owner} failed:`, e?.message);
       return res.status(500).json({ error: e?.message || 'whatsapp_init_failed' });
     }
+  });
+
+  // Why is the agent not replying? Reports every gate a message must pass,
+  // without exposing any secret value. Answers in one request what previously
+  // required reading the service logs.
+  app.get('/api/whatsapp/diagnostics', async (req, res) => {
+    const owner = ownerFromReq(req);
+    const session = waManager.get(owner);
+
+    let cfg = null;
+    try {
+      cfg = await mongoose.connection.collection('agent_configs').findOne({ owner_email: owner });
+    } catch (_) {}
+
+    let sessionStart = null;
+    try {
+      const doc = await SessionStart.findOne({ owner_email: owner }).lean();
+      sessionStart = doc?.session_started_at || null;
+    } catch (_) {}
+
+    let credsStored = null;
+    try {
+      const coll = await getWaAuthCollection();
+      credsStored = !!(await coll.findOne(
+        { owner_email: owner, type: 'creds', id: '' },
+        { projection: { _id: 1 } }
+      ));
+    } catch (_) {}
+
+    return res.json({
+      ok: true,
+      owner,
+      auto_reply: {
+        // The single most common cause: the key is `sync: false` in render.yaml,
+        // so it has to be set by hand on the service.
+        claude_api_key_present: !!process.env.CLAUDE_API_KEY,
+        claude_model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
+        reply_scope: cfg?.reply_scope || 'all',
+        reply_keywords_count: Array.isArray(cfg?.reply_keywords) ? cfg.reply_keywords.length : 0,
+      },
+      connection: {
+        state: session?.state || 'not_initialised',
+        phone: session?.phone || null,
+        last_error: session?.lastError || null,
+        creds_stored_in_mongo: credsStored,
+      },
+      message_filter: {
+        session_started_at: sessionStart,
+        max_backlog_hours: Number(process.env.WA_MAX_BACKLOG_HOURS || 24),
+        note: 'Inbound messages older than session_started_at are ignored.',
+      },
+      ts: new Date(),
+    });
   });
 
   app.get('/api/whatsapp/health', async (req, res) => {
