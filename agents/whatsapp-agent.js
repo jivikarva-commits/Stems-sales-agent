@@ -181,14 +181,15 @@ class SalesAgent {
     const response = await this.claude.messages.create({
       model: process.env.CLAUDE_MODEL || 'claude-opus-5',
       max_tokens: 1024,
-      temperature: 0.7,
       system: this._buildPrompt(safeProfile, safeAccount, agentConfig),
       messages: [
         ...safeHistory.map((h) => ({ role: h.role, content: h.content })),
         { role: 'user', content: userMessage },
       ],
     });
-    return response.content[0].text;
+    // Opus 5 thinks by default, so content[0] may be a thinking block.
+    const textBlock = (response.content || []).find((b) => b.type === 'text');
+    return textBlock ? textBlock.text : '';
   }
 
   _buildPrompt(profile, account, agentConfig) {

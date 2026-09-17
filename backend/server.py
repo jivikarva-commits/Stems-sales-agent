@@ -1920,7 +1920,9 @@ For email:
             system=sys_p,
             messages=msgs
         )
-        raw = r.content[0].text.strip().replace("```json","").replace("```","").strip()
+        # Opus 5 thinks by default, so content[0] may be a thinking block.
+        block = next((b for b in (r.content or []) if b.type == "text"), None)
+        raw = (block.text if block else "").strip().replace("```json","").replace("```","").strip()
         first = raw.find("{")
         last  = raw.rfind("}")
         if first != -1 and last > first:

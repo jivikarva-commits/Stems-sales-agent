@@ -208,7 +208,9 @@ Return ONLY valid JSON:
       messages:   [{ role: 'user', content: prompts[emailType] }],
     });
 
-    let raw = response.content[0].text.trim();
+    // Opus 5 thinks by default, so content[0] may be a thinking block.
+    const textBlock = (response.content || []).find((b) => b.type === 'text');
+    let raw = (textBlock ? textBlock.text : '').trim();
     raw = raw.replace(/```json|```/g, '').trim();
 
     // Extract JSON safely
