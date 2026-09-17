@@ -1010,6 +1010,9 @@ async def dashboard_stats():
     conv  = max(await db.leads.count_documents(scoped_query({"status": "converted"}, include_legacy_for_owner=True)),
                 await db.userprofiles.count_documents(scoped_query({"status": "converted"}, include_legacy_for_owner=True)))
     rate  = round((conv / tl * 100) if tl > 0 else 0, 1)
+    # No revenue figure is returned: nothing in this system records a deal
+    # value, so any number here would be invented. The previous one multiplied
+    # converted leads by a hardcoded 42000.
     return {
         "total_leads":      tl,
         "active_campaigns": await db.campaigns.count_documents(scoped_query({"status": "active"}, include_legacy_for_owner=True)),
@@ -1017,7 +1020,6 @@ async def dashboard_stats():
         "calls_made":       ca_calls,
         "emails_sent":      em_sent,
         "whatsapp_sent":    wa_msgs,
-        "revenue_generated": conv * 42000,
         "hot_leads":        hot_leads,
     }
 

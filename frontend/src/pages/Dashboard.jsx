@@ -206,10 +206,10 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 min-[360px]:grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4 mb-5 sm:mb-6">
-        <StatsCard title="Total Leads" value={stats?.total_leads || 0} change="+12.5% this month" icon={Users} color="emerald" />
-        <StatsCard title="Active Deals" value={stats?.active_campaigns || 0} change="+2 this week" icon={BriefcaseBusiness} color="blue" />
-        <StatsCard title="Conversion Rate" value={`${stats?.conversion_rate || 0}%`} change="+3.2% vs last month" icon={TrendingUp} color="amber" />
-        <StatsCard title="Revenue" value={`${((stats?.revenue_generated || 0) / 100000).toFixed(1)}L`} change="+18% this month" icon={Zap} color="violet" />
+        <StatsCard title="Total Leads" value={stats?.total_leads || 0} icon={Users} color="emerald" />
+        <StatsCard title="Active Campaigns" value={stats?.active_campaigns || 0} icon={BriefcaseBusiness} color="blue" />
+        <StatsCard title="Conversion Rate" value={`${stats?.conversion_rate || 0}%`} icon={TrendingUp} color="amber" />
+        <StatsCard title="Hot Leads" value={stats?.hot_leads || 0} icon={Zap} color="violet" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
@@ -228,17 +228,17 @@ export default function Dashboard() {
                 fill="#10B981"
               />
               <SparklineCard
-                title="Active Deals"
-                subtitle="Deals in motion"
-                value={(stats?.active_campaigns || 0).toLocaleString()}
+                title="Email & Calls"
+                subtitle="Outbound activity"
+                value={((stats?.emails_sent || 0) + (stats?.calls_made || 0)).toLocaleString()}
                 data={dealsSeries}
                 stroke="#3B82F6"
                 fill="#3B82F6"
               />
               <SparklineCard
-                title="Revenue"
-                subtitle={`Revenue (${((stats?.revenue_generated || 0) / 100000).toFixed(1)}L)`}
-                value={`${((stats?.revenue_generated || 0) / 100000).toFixed(1)}L`}
+                title="WhatsApp"
+                subtitle="Inbound messages"
+                value={(stats?.whatsapp_sent || 0).toLocaleString()}
                 data={revenueSeries}
                 stroke="#F59E0B"
                 fill="#F59E0B"
