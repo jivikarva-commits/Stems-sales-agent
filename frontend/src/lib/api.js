@@ -7,11 +7,9 @@ const configuredBackend = normalizeBaseUrl(
   process.env.VITE_BACKEND_URL ||
   process.env.VITE_API_URL
 );
-// Render blueprint service (render.yaml) is `stems-sales-agent-backend`; the
-// bare `stems-sales-agent` host is the older service kept as a fallback.
+// The one backend this app talks to — the service defined in render.yaml.
 const primaryBackend = "https://stems-sales-agent-backend.onrender.com";
-const legacyBackend = "https://stems-sales-agent.onrender.com";
-const backendCandidates = [configuredBackend, primaryBackend, legacyBackend]
+const backendCandidates = [configuredBackend, primaryBackend]
   .filter(Boolean)
   .filter((url, index, arr) => arr.indexOf(url) === index);
 

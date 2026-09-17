@@ -3,7 +3,7 @@
 const { fork } = require('child_process');
 const path = require('path');
 
-const RENDER_BASE_URL = process.env.RENDER_BASE_URL || 'https://stems-sales-agent.onrender.com';
+const RENDER_BASE_URL = process.env.RENDER_BASE_URL || 'https://stems-sales-agent-backend.onrender.com';
 
 const AGENTS = [
   { name: 'WhatsApp Agent', file: './whatsapp-agent.js', port: 3000, color: '\x1b[32m' },
