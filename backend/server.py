@@ -1915,7 +1915,7 @@ For email:
     try:
         c = _ant.Anthropic(api_key=key)
         r = c.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-opus-5",
             max_tokens=300,
             system=sys_p,
             messages=msgs

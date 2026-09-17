@@ -92,7 +92,7 @@ const conversationSchema = new mongoose.Schema({
   content: { type: String, required: true },
   messageId: String,
   owner_email: { type: String, index: true, default: DEFAULT_OWNER },
-  user_id: { type: String, index: true, default() { return this.owner_email || DEFAULT_OWNER; } },
+  user_id: { type: String, index: true, default() { return (this && this.owner_email) || DEFAULT_OWNER; } },
   timestamp: { type: Date, default: Date.now, index: true },
 });
 
@@ -114,7 +114,7 @@ const userProfileSchema = new mongoose.Schema({
   conversationClosed: { type: Boolean, default: false },
   tags: [String],
   owner_email: { type: String, index: true, default: DEFAULT_OWNER },
-  user_id: { type: String, index: true, default() { return this.owner_email || DEFAULT_OWNER; } },
+  user_id: { type: String, index: true, default() { return (this && this.owner_email) || DEFAULT_OWNER; } },
   lastInteraction: Date,
   createdAt: { type: Date, default: Date.now },
 });
@@ -179,7 +179,7 @@ class SalesAgent {
     const safeHistory = Array.isArray(history) ? history : [];
 
     const response = await this.claude.messages.create({
-      model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
+      model: process.env.CLAUDE_MODEL || 'claude-opus-5',
       max_tokens: 1024,
       temperature: 0.7,
       system: this._buildPrompt(safeProfile, safeAccount, agentConfig),
@@ -1069,7 +1069,7 @@ async function startServer() {
         // The single most common cause: the key is `sync: false` in render.yaml,
         // so it has to be set by hand on the service.
         claude_api_key_present: !!process.env.CLAUDE_API_KEY,
-        claude_model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
+        claude_model: process.env.CLAUDE_MODEL || 'claude-opus-5',
         reply_scope: cfg?.reply_scope || 'all',
         reply_keywords_count: Array.isArray(cfg?.reply_keywords) ? cfg.reply_keywords.length : 0,
       },

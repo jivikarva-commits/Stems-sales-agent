@@ -203,7 +203,7 @@ Return ONLY valid JSON:
     };
 
     const response = await claude.messages.create({
-      model:      'claude-sonnet-4-20250514',
+      model:      'claude-opus-5',
       max_tokens: 1000,
       messages:   [{ role: 'user', content: prompts[emailType] }],
     });
