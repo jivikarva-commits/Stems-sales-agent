@@ -2,19 +2,30 @@ import axios from "axios";
 
 const normalizeBaseUrl = (url) => (url || "").replace(/\/+$/, "");
 
-const configuredBackend = normalizeBaseUrl(
-  process.env.REACT_APP_BACKEND_URL ||
-  process.env.VITE_BACKEND_URL ||
-  process.env.VITE_API_URL
-);
-// The one backend this app talks to — the service defined in render.yaml.
-const primaryBackend = "https://stems-sales-agent-backend.onrender.com";
-const backendCandidates = [configuredBackend, primaryBackend]
+// The one backend this app talks to: the EC2 box behind stemsai.in, which
+// runs both the FastAPI backend and the WhatsApp agent.
+const primaryBackend = "https://stemsai.in";
+
+// A build-time environment variable is a *development* override only. Pinning
+// production here keeps the deployed origin in version control instead of in a
+// dashboard setting, where a stale value silently pointed the live site at a
+// decommissioned host.
+const devBackends = () => [
+  normalizeBaseUrl(
+    process.env.REACT_APP_BACKEND_URL ||
+    process.env.VITE_BACKEND_URL ||
+    process.env.VITE_API_URL
+  ),
+  primaryBackend,
+];
+const backendCandidates = (
+  process.env.NODE_ENV === "production" ? [primaryBackend] : devBackends()
+)
   .filter(Boolean)
   .filter((url, index, arr) => arr.indexOf(url) === index);
 
-// Render's free plan spins services down after idling, and a cold start can
-// take well over 30s. A short timeout turns that into a bogus "login failed".
+// The backend can be slow on a cold start; a short timeout turns that into a
+// bogus "login failed".
 const REQUEST_TIMEOUT_MS = 60000;
 
 // Single source of truth for the backend origin — every direct fetch /
