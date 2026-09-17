@@ -26,7 +26,8 @@ export default function WhatsAppAgent() {
 
   // Per-user agent config
   const [agentCfg, setAgentCfg] = useState({
-    agent_name: "", agent_description: "", reply_scope: "all", reply_keywords: [], configured: false,
+    agent_name: "", agent_description: "", reply_scope: "all", reply_keywords: [],
+    auto_reply_enabled: false, configured: false,
   });
   const [keywordsInput, setKeywordsInput] = useState("");
   const [savingCfg, setSavingCfg] = useState(false);
@@ -55,6 +56,7 @@ export default function WhatsAppAgent() {
           agent_description: cfgData.agent_description || "",
           reply_scope: cfgData.reply_scope || "all",
           reply_keywords: cfgData.reply_keywords || [],
+          auto_reply_enabled: !!cfgData.auto_reply_enabled,
           configured: !!cfgData.configured,
         });
         setKeywordsInput((cfgData.reply_keywords || []).join(", "));
@@ -64,12 +66,19 @@ export default function WhatsAppAgent() {
   }, []);
 
   const saveAgentCfg = async () => {
-    if (!agentCfg.agent_name.trim()) {
-      alert("Agent name is required.");
+    // Lead capture never reads the description, so only demand it when the
+    // agent is actually going to reply.
+    if (agentCfg.auto_reply_enabled && !agentCfg.agent_name.trim()) {
+      alert("Agent name is required when auto-reply is on.");
       return;
     }
-    if (!agentCfg.agent_description.trim() || agentCfg.agent_description.trim().length < 20) {
-      alert("Please describe your agent in at least 20 characters — your own words.");
+    if (agentCfg.auto_reply_enabled
+        && (!agentCfg.agent_description.trim() || agentCfg.agent_description.trim().length < 20)) {
+      alert("With auto-reply on, describe your agent in at least 20 characters — your own words.");
+      return;
+    }
+    if (!keywordsInput.trim()) {
+      alert("Add at least one keyword — leads are captured on keyword matches.");
       return;
     }
     setSavingCfg(true);
@@ -82,8 +91,9 @@ export default function WhatsAppAgent() {
       await api.post("/whatsapp/agent-config", {
         agent_name: agentCfg.agent_name.trim(),
         agent_description: agentCfg.agent_description.trim(),
-        reply_scope: agentCfg.reply_scope === "keywords" ? "keywords" : "all",
+        reply_scope: "keywords",
         reply_keywords: keywords,
+        auto_reply_enabled: agentCfg.auto_reply_enabled,
       });
       setAgentCfg((prev) => ({ ...prev, reply_keywords: keywords, configured: true }));
       setCfgSaved(true);
@@ -358,20 +368,22 @@ export default function WhatsAppAgent() {
         <TabsContent value="settings">
           <Card className="bg-slate-800 border-slate-700/50">
             <CardHeader>
-              <CardTitle className="text-base text-slate-200">Your AI Agent</CardTitle>
+              <CardTitle className="text-base text-slate-200">Lead Capture</CardTitle>
               <p className="text-xs text-slate-400">
-                Define your agent in your own words. The agent will reply to WhatsApp messages using only what you write here.
+                Choose the keywords that matter to your business. When a WhatsApp
+                message contains one, that contact is captured as a lead in your CRM.
+                Nothing is sent back to them.
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
-              {!agentCfg.configured && (
+              {!keywordsInput.trim() && (
                 <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-300">
-                  Setup required — please describe your agent below before it starts replying.
+                  No keywords set yet — no leads will be captured until you add at least one.
                 </div>
               )}
 
               <div className="space-y-1.5">
-                <label className="text-xs text-slate-400 uppercase tracking-wider">Agent Name</label>
+                <label className="text-xs text-slate-400 uppercase tracking-wider">Agent Name (optional)</label>
                 <Input
                   value={agentCfg.agent_name}
                   onChange={(e) => setAgentCfg((p) => ({ ...p, agent_name: e.target.value }))}
@@ -382,7 +394,7 @@ export default function WhatsAppAgent() {
 
               <div className="space-y-1.5">
                 <label className="text-xs text-slate-400 uppercase tracking-wider">
-                  Agent Description (your own words — what should the agent do, who do you sell to, what's your tone?)
+                  Agent Description (optional)
                 </label>
                 <textarea
                   rows={6}
@@ -392,51 +404,30 @@ export default function WhatsAppAgent() {
                   className="w-full rounded-md border border-slate-700 bg-slate-900 p-3 text-sm text-slate-200 placeholder:text-slate-500 outline-none focus:border-blue-400"
                 />
                 <p className="text-[10px] text-slate-500">
-                  Minimum 20 characters. The agent only knows what you write here.
+                  Only used if auto-reply is turned on, which it is not by default.
+                  Lead capture ignores this entirely.
                 </p>
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs text-slate-400 uppercase tracking-wider">Reply Scope</label>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setAgentCfg((p) => ({ ...p, reply_scope: "all" }))}
-                    className={`flex-1 rounded-md border px-3 py-2 text-xs text-left transition ${
-                      agentCfg.reply_scope === "all"
-                        ? "border-blue-400/60 bg-blue-500/15 text-blue-100"
-                        : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-600"
-                    }`}
-                  >
-                    <div className="font-medium">Reply to all messages</div>
-                    <div className="text-[10px] mt-0.5 opacity-75">Agent responds to every incoming message</div>
-                  </button>
-                  <button
-                    onClick={() => setAgentCfg((p) => ({ ...p, reply_scope: "keywords" }))}
-                    className={`flex-1 rounded-md border px-3 py-2 text-xs text-left transition ${
-                      agentCfg.reply_scope === "keywords"
-                        ? "border-blue-400/60 bg-blue-500/15 text-blue-100"
-                        : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-600"
-                    }`}
-                  >
-                    <div className="font-medium">Reply to specific keywords only</div>
-                    <div className="text-[10px] mt-0.5 opacity-75">Define keywords below</div>
-                  </button>
-                </div>
+                <label className="text-xs text-slate-400 uppercase tracking-wider">Keywords</label>
+                <Input
+                  value={keywordsInput}
+                  onChange={(e) => setKeywordsInput(e.target.value)}
+                  placeholder="price, demo, quote, booking, kitna"
+                  className="bg-slate-900 border-slate-700 text-slate-200"
+                />
+                <p className="text-[10px] text-slate-500">
+                  Comma-separated. When an incoming WhatsApp message contains one of
+                  these, the sender is captured as a lead in your CRM. Messages that
+                  match nothing are ignored.
+                </p>
+                <p className="text-[10px] text-slate-500">
+                  Matching ignores case and only needs the keyword to start a word, so
+                  "price" also catches "prices". Keep keywords specific — a short one
+                  like "plan" will also match "planning".
+                </p>
               </div>
-
-              {agentCfg.reply_scope === "keywords" && (
-                <div className="space-y-1.5">
-                  <label className="text-xs text-slate-400 uppercase tracking-wider">
-                    Keywords (comma-separated — agent only replies if message contains one of these)
-                  </label>
-                  <Input
-                    value={keywordsInput}
-                    onChange={(e) => setKeywordsInput(e.target.value)}
-                    placeholder="price, demo, book, available, info"
-                    className="bg-slate-900 border-slate-700 text-slate-200"
-                  />
-                </div>
-              )}
 
               <div className="flex items-center gap-3 pt-2">
                 <Button
@@ -444,7 +435,7 @@ export default function WhatsAppAgent() {
                   disabled={savingCfg}
                   className="bg-emerald-600 hover:bg-emerald-700 text-white"
                 >
-                  {savingCfg ? "Saving..." : "Save Agent Config"}
+                  {savingCfg ? "Saving..." : "Save Keywords"}
                 </Button>
                 {cfgSaved && <span className="text-sm text-emerald-400">Saved successfully</span>}
               </div>

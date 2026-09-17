@@ -1020,29 +1020,45 @@ async function startServer() {
   app.post('/api/agent-config', async (req, res) => {
     const owner = ownerFromReq(req);
     const { agent_name, agent_description, reply_scope, reply_keywords, auto_reply_enabled } = req.body || {};
-    if (!agent_name || !agent_description || !String(agent_description).trim()) {
-      return res.status(400).json({ error: 'agent_name and agent_description are required' });
+
+    const existing = await mongoose.connection.collection('agent_configs').findOne({ owner_email: owner });
+    const wantsAutoReply = auto_reply_enabled === undefined
+      ? Boolean(existing?.auto_reply_enabled)
+      : auto_reply_enabled === true;
+
+    // The description is the agent's entire prompt, so it is only required when
+    // the agent actually speaks. Demanding it for lead capture blocked people
+    // from saving keywords for a feature that never reads it.
+    if (wantsAutoReply) {
+      const name = agent_name === undefined ? existing?.agent_name : agent_name;
+      const desc = agent_description === undefined ? existing?.agent_description : agent_description;
+      if (!name || !String(desc || '').trim()) {
+        return res.status(400).json({
+          error: 'agent_name and agent_description are required when auto-reply is enabled',
+        });
+      }
     }
+
     const scope = (reply_scope === 'keywords') ? 'keywords' : 'all';
     const keywords = Array.isArray(reply_keywords)
       ? reply_keywords.map((k) => String(k).trim().toLowerCase()).filter(Boolean)
       : [];
+
+    // Only fields the caller actually sent are written, so saving from one part
+    // of the UI cannot blank out a value set elsewhere.
+    const fields = {
+      owner_email: owner,
+      reply_scope: scope,
+      reply_keywords: keywords,
+      updated_at: new Date(),
+    };
+    if (agent_name !== undefined) fields.agent_name = String(agent_name).trim();
+    if (agent_description !== undefined) fields.agent_description = String(agent_description).trim();
+    if (auto_reply_enabled !== undefined) fields.auto_reply_enabled = auto_reply_enabled === true;
+
     await mongoose.connection.collection('agent_configs').updateOne(
       { owner_email: owner },
-      {
-        $set: {
-          owner_email: owner,
-          agent_name: String(agent_name).trim(),
-          agent_description: String(agent_description).trim(),
-          reply_scope: scope,
-          reply_keywords: keywords,
-          // Only written when the caller actually sends the field, so saving
-          // the agent config from the UI cannot silently flip the switch off.
-          ...(auto_reply_enabled === undefined ? {} : { auto_reply_enabled: auto_reply_enabled === true }),
-          updated_at: new Date(),
-        },
-        $setOnInsert: { created_at: new Date() },
-      },
+      { $set: fields, $setOnInsert: { created_at: new Date() } },
       { upsert: true }
     );
     console.log(`[WA] Agent config saved for owner=${owner}, scope=${scope}`);
