@@ -2247,12 +2247,17 @@ async def list_leads(status: Optional[str]=Query(None), campaign_id: Optional[st
             if not bare or bare in seen_phones:
                 continue
             seen_phones.add(bare)
+            # WhatsApp addresses many contacts by LID rather than phone number.
+            # A LID is not dialable, so prefixing it with "+" presented a 15-digit
+            # internal id as if it were a real number.
+            is_lid = bool(p.get("lidOnly"))
             uid_plus = "+" + bare
             leads.append({
                 "id":           uid_plus,
-                "name":         p.get("name") or uid,
+                "name":         p.get("name") or p.get("pushName") or "",
                 "company":      p.get("business", ""),
-                "phone":        uid_plus,
+                "phone":        "" if is_lid else uid_plus,
+                "whatsapp_id":  bare if is_lid else "",
                 "email":        p.get("email", ""),
                 "status":       p.get("status", "new"),
                 "source":       "whatsapp",

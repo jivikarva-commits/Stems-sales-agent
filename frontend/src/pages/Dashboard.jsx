@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import {
-  Users, BriefcaseBusiness, TrendingUp, Zap, Phone, Mail, MessageCircle,
+  Users, TrendingUp, Zap, Phone, Mail, MessageCircle,
   ArrowUpRight, BarChart3, Activity
 } from "lucide-react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip } from "recharts";
@@ -227,9 +227,8 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 min-[360px]:grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4 mb-5 sm:mb-6">
+      <div className="grid grid-cols-1 min-[360px]:grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 mb-5 sm:mb-6">
         <StatsCard title="Total Leads" value={stats?.total_leads || 0} icon={Users} color="emerald" />
-        <StatsCard title="Active Campaigns" value={stats?.active_campaigns || 0} icon={BriefcaseBusiness} color="blue" />
         <StatsCard title="Conversion Rate" value={`${stats?.conversion_rate || 0}%`} icon={TrendingUp} color="amber" />
         <StatsCard title="Hot Leads" value={stats?.hot_leads || 0} icon={Zap} color="violet" />
       </div>
@@ -278,13 +277,18 @@ export default function Dashboard() {
                 {leads.slice(0, 15).map((lead, i) => (
                   <div key={lead.id || i} className="flex items-center gap-3 py-2.5" data-testid={`lead-row-${i}`}>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-mono tabular-nums text-white truncate">
-                        {lead.phone || lead.email || lead.id}
+                      <p className="text-sm text-white truncate">
+                        {lead.name || lead.phone || lead.email || "Unknown contact"}
                       </p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
+                      <p className="text-[11px] text-slate-500 mt-0.5 font-mono tabular-nums truncate">
+                        {lead.phone
+                          ? lead.phone
+                          : lead.whatsapp_id
+                            ? `WhatsApp ID ${lead.whatsapp_id} · number hidden by contact`
+                            : lead.email || ""}
                         {lead.last_contact
-                          ? new Date(lead.last_contact).toLocaleDateString("en-IN", { day: "numeric", month: "short" })
-                          : "—"}
+                          ? ` · ${new Date(lead.last_contact).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`
+                          : ""}
                       </p>
                     </div>
                     <LeadStatusBadge status={lead.status} />
