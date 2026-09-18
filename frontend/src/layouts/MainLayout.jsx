@@ -1,16 +1,15 @@
 import { Outlet, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import {
-  LayoutDashboard, Megaphone, MessageCircle, Mail, Phone,
-  Users, BarChart3, TrendingUp, CreditCard, Zap, ChevronLeft, ChevronRight, Bell, Menu, X
+  LayoutDashboard, MessageCircle, Mail, Phone,
+  BarChart3, TrendingUp, Zap, ChevronLeft, ChevronRight, Bell, Menu, X
 } from "lucide-react";
 import api from "../lib/api";
 
 const navGroups = [
+  // CRM lives on the dashboard now, so it is not a destination of its own.
   { section: "MAIN", items: [
     { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { path: "/campaigns", label: "Campaigns", icon: Megaphone },
-    { path: "/crm", label: "CRM", icon: Users },
     { path: "/reports", label: "Reports", icon: BarChart3 },
   ]},
   { section: "AGENTS", items: [
@@ -20,16 +19,14 @@ const navGroups = [
   ]},
   { section: "TOOLS", items: [
     { path: "/insights", label: "Insights", icon: TrendingUp },
-    { path: "/billing", label: "Billing", icon: CreditCard },
   ]},
 ];
 
 const topTabs = [
-  { label: "Dashboard", path: "/dashboard", match: ["/dashboard"] },
+  // Agents stay reachable from the sidebar; the dashboard tab stays selected
+  // while you are on one so the header does not look unanchored.
+  { label: "Dashboard", path: "/dashboard", match: ["/dashboard", "/whatsapp", "/email", "/calls", "/agent-setup"] },
   { label: "Reports", path: "/reports", match: ["/reports"] },
-  { label: "CRM", path: "/crm", match: ["/crm"] },
-  { label: "Automation", path: "/campaigns", match: ["/campaigns", "/whatsapp", "/email", "/calls", "/agent-setup"] },
-  { label: "Billing", path: "/billing", match: ["/billing"] },
 ];
 
 export default function MainLayout() {

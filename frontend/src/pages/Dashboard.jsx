@@ -31,6 +31,26 @@ function buildSparkline(activity, types = null) {
   return days.map((d) => ({ name: d.name, value: d.value }));
 }
 
+const LEAD_STATUS_STYLES = {
+  hot:       "bg-rose-500/15 text-rose-300 border-rose-500/30",
+  warm:      "bg-amber-500/15 text-amber-300 border-amber-500/30",
+  qualified: "bg-blue-500/15 text-blue-300 border-blue-500/30",
+  converted: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+  missed:    "bg-slate-500/15 text-slate-400 border-slate-500/30",
+  cold:      "bg-slate-500/15 text-slate-400 border-slate-500/30",
+  new:       "bg-violet-500/15 text-violet-300 border-violet-500/30",
+};
+
+function LeadStatusBadge({ status }) {
+  const key = String(status || "new").toLowerCase();
+  const style = LEAD_STATUS_STYLES[key] || LEAD_STATUS_STYLES.new;
+  return (
+    <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wider ${style}`}>
+      {key}
+    </span>
+  );
+}
+
 function StatsCard({ title, value, change, icon: Icon, color = "blue" }) {
   const colors = {
     blue: "bg-blue-500/15 text-blue-300",
@@ -140,15 +160,22 @@ export default function Dashboard() {
   const [stats, setStats] = useState(null);
   const [activity, setActivity] = useState([]);
   const [agents, setAgents] = useState([]);
+  const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
-    Promise.all([api.get("/dashboard/stats"), api.get("/dashboard/activity"), api.get("/agents")])
-      .then(([s, a, ag]) => {
+    Promise.all([
+      api.get("/dashboard/stats"),
+      api.get("/dashboard/activity"),
+      api.get("/agents"),
+      api.get("/leads", { params: { limit: 50 } }),
+    ])
+      .then(([s, a, ag, l]) => {
         setStats(s.data);
         setActivity(a.data);
         setAgents(ag.data);
+        setLeads(Array.isArray(l.data?.leads) ? l.data.leads : []);
       })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -164,6 +191,8 @@ export default function Dashboard() {
   const dealsSeries = useMemo(() => buildSparkline(activity, ["email", "call"]), [activity]);
   const revenueSeries = useMemo(() => buildSparkline(activity, ["whatsapp"]), [activity]);
 
+  // Message text is deliberately never rendered — the dashboard shows who got
+  // in touch and where they stand, not the conversation itself.
   const waPreview = activity.find((item) => item.agent_type === "whatsapp");
   const emailPreview = activity.find((item) => item.agent_type === "email");
   const callPreview = activity.find((item) => item.agent_type === "call");
@@ -187,13 +216,6 @@ export default function Dashboard() {
           <p className="text-sm font-medium text-slate-400 mt-1">Control center for your automation performance</p>
         </div>
         <div className="flex gap-2">
-          <Button
-            className="bg-blue-500 hover:bg-blue-600 text-white shadow-[0_0_22px_rgba(59,130,246,0.28)]"
-            onClick={() => navigate("/campaigns")}
-            data-testid="quick-action-new-campaign"
-          >
-            <BriefcaseBusiness className="h-4 w-4 mr-2" /> New Campaign
-          </Button>
           <Button
             variant="outline"
             className="border-white/20 bg-white/5 hover:bg-white/10 text-slate-100"
@@ -247,35 +269,32 @@ export default function Dashboard() {
           </Card>
 
           <Card className="glass-card rounded-2xl">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base text-white">Recent Activity</CardTitle>
+            <CardHeader className="pb-3 flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-base text-white">CRM &mdash; Leads</CardTitle>
+              <span className="text-[11px] text-slate-400 font-mono tabular-nums">{leads.length}</span>
             </CardHeader>
             <CardContent>
-              <div className="space-y-1">
-                {activity.slice(0, 10).map((item, i) => {
-                  const icons = { whatsapp: MessageCircle, email: Mail, call: Phone };
-                  const colors = { whatsapp: "text-emerald-300 bg-emerald-500/15", email: "text-blue-300 bg-blue-500/15", call: "text-amber-300 bg-amber-500/15" };
-                  const Icon = icons[item.agent_type] || Activity;
-                  const clr = colors[item.agent_type] || "text-slate-300 bg-slate-700/50";
-                  return (
-                    <div key={i} className="flex items-start gap-3 py-3 border-b border-white/10 last:border-0" data-testid={`activity-item-${i}`}>
-                      <div className={`p-1.5 rounded-md ${clr.split(" ")[1]}`}>
-                        <Icon className={`h-3.5 w-3.5 ${clr.split(" ")[0]}`} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-slate-200 truncate">
-                          <span className="font-medium text-white">{item.lead_name}</span>{" "}
-                          <span className="text-slate-400">{item.company}</span>
-                        </p>
-                        <p className="text-xs text-slate-400 truncate mt-0.5">{item.content?.substring(0, 86)}</p>
-                      </div>
-                      <span className="text-[11px] text-slate-500 font-mono tabular-nums whitespace-nowrap shrink-0">
-                        {new Date(item.timestamp).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
-                      </span>
+              <div className="divide-y divide-white/10">
+                {leads.slice(0, 15).map((lead, i) => (
+                  <div key={lead.id || i} className="flex items-center gap-3 py-2.5" data-testid={`lead-row-${i}`}>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-mono tabular-nums text-white truncate">
+                        {lead.phone || lead.email || lead.id}
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        {lead.last_contact
+                          ? new Date(lead.last_contact).toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+                          : "—"}
+                      </p>
                     </div>
-                  );
-                })}
-                {activity.length === 0 ? <p className="text-sm text-slate-500 py-8 text-center">No recent activity</p> : null}
+                    <LeadStatusBadge status={lead.status} />
+                  </div>
+                ))}
+                {leads.length === 0 ? (
+                  <p className="text-sm text-slate-500 py-8 text-center">
+                    No leads yet. They appear here when an inbound message matches one of your keywords.
+                  </p>
+                ) : null}
               </div>
             </CardContent>
           </Card>
@@ -293,8 +312,10 @@ export default function Dashboard() {
                 accent="#10B981"
                 badge="Active"
                 active={agentMap.whatsapp?.status === "active"}
-                preview={waPreview?.content || "No live conversation yet. Waiting for inbound replies..."}
-                meta={waPreview ? `${waPreview.lead_name || "Lead"} • live conversation` : "Connect to start live previews"}
+                preview={waPreview ? `Last inbound from ${waPreview.lead_name || "a contact"}` : "Waiting for inbound messages"}
+                meta={waPreview
+                  ? new Date(waPreview.timestamp).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
+                  : "Connect WhatsApp to start capturing leads"}
                 onClick={() => navigate("/whatsapp")}
               />
               <AgentLiveCard
@@ -303,7 +324,7 @@ export default function Dashboard() {
                 accent="#3B82F6"
                 badge="Active"
                 active={agentMap.email?.status === "active"}
-                preview={emailPreview?.content || "No recent subject. New outreach emails will appear here."}
+                preview={emailPreview ? `Last activity with ${emailPreview.lead_name || "a contact"}` : "No recent email activity"}
                 meta={emailPreview ? `${emailPreview.lead_name || "Prospect"} • ${emailPreview.status || "recent"}` : "Idle • waiting for outbound send"}
                 onClick={() => navigate("/email")}
               />
@@ -313,7 +334,7 @@ export default function Dashboard() {
                 accent="#22C55E"
                 badge="Active"
                 active={agentMap.call?.status === "active"}
-                preview={callPreview?.content || "Waveform standby. Calls and transcripts will stream here."}
+                preview={callPreview ? `Last call with ${callPreview.lead_name || "a contact"}` : "No recent calls"}
                 meta={callPreview ? `${callPreview.lead_name || "Prospect"} • ${callPreview.status || "recent call"}` : "No active call"}
                 onClick={() => navigate("/calls")}
                 showWave
