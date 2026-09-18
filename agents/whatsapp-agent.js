@@ -111,9 +111,7 @@ const userProfileSchema = new mongoose.Schema({
   location: String,
   purpose: String,
   leadScore: { type: Number, default: 0 },
-  status: { type: String, enum: ['new', 'qualified', 'hot', 'warm', 'cold', 'converted', 'missed'], default: 'new' },
-  statusReason: String,
-  statusUpdatedAt: Date,
+  status: { type: String, enum: ['new', 'qualified', 'hot', 'cold', 'converted'], default: 'new' },
   marketingOptOut: { type: Boolean, default: false },
   // FIX 2: Active conversation tracking — once keyword triggers reply,
   // contact is "active" and gets all subsequent messages until timeout/closed.
@@ -159,73 +157,6 @@ class SalesAgent {
       : null;
   }
 
-  // Read the exchange and decide where the lead stands. Runs after every new
-  // message in either direction, so the CRM reflects the latest turn rather
-  // than whatever was true when the contact first wrote in.
-  async classifyLead(ownerEmail, userId) {
-    if (!this.claude) return;
-    const owner = String(ownerEmail || DEFAULT_OWNER).trim().toLowerCase();
-    const scope = ownerScope(owner, { userId });
-    const NL = String.fromCharCode(10);
-
-    const recent = await Conversation.find(scope).sort({ timestamp: -1 }).limit(24).lean();
-    if (!recent.length) return;
-    const transcript = recent
-      .reverse()
-      .map((m) => (m.role === 'assistant' ? 'Business: ' : 'Customer: ') + m.content)
-      .join(NL)
-      .slice(-6000);
-
-    const prompt = [
-      'Statuses:',
-      '- hot: clear buying intent, asking to proceed, price agreed, or ready to meet',
-      '- warm: engaged and interested but not committed',
-      '- qualified: a real prospect who shared a need, budget or timeline',
-      '- converted: the deal is agreed or done',
-      '- missed: the customer asked something and the business never answered,',
-      '  or went quiet after being left waiting',
-      '- cold: not interested, wrong fit, or explicitly declined',
-      '- new: too little has been said to judge',
-      '',
-      'Exchange:',
-      transcript,
-      '',
-      'Return only this JSON: {"status":"<one status>","reason":"<max 12 words>"}',
-    ].join(NL);
-
-    const response = await this.claude.messages.create({
-      model: process.env.CLAUDE_MODEL || 'claude-opus-5',
-      max_tokens: 300,
-      system: 'You classify sales leads from a WhatsApp exchange between a business and a customer. Reply with JSON only.',
-      messages: [{ role: 'user', content: prompt }],
-    });
-
-    // Opus 5 thinks by default, so content[0] may be a thinking block.
-    const block = (response.content || []).find((b) => b.type === 'text');
-    const raw = (block ? block.text : '').trim();
-    let parsed = null;
-    const first = raw.indexOf('{');
-    const last = raw.lastIndexOf('}');
-    if (first !== -1 && last > first) {
-      try { parsed = JSON.parse(raw.slice(first, last + 1)); } catch (_) {}
-    }
-
-    const allowed = ['hot', 'warm', 'qualified', 'converted', 'missed', 'cold', 'new'];
-    const status = String(parsed && parsed.status ? parsed.status : '').toLowerCase();
-    if (!allowed.includes(status)) {
-      console.error('[WA] classify: unusable response for ' + userId);
-      return;
-    }
-
-    await UserProfile.findOneAndUpdate(scope, {
-      $set: {
-        status,
-        statusReason: String(parsed.reason || '').slice(0, 120),
-        statusUpdatedAt: new Date(),
-      },
-    });
-    console.log('[WA] 📊 ' + userId + ' -> ' + status + ' (' + (parsed.reason || '') + ')');
-  }
   async chat(ownerEmail, userId, userMessage) {
     if (!this.claude) {
       throw new Error('CLAUDE_API_KEY missing');
@@ -654,23 +585,13 @@ class BaileysSessionManager {
 
         for (const msg of incoming) {
           try {
-            if (!msg) continue;
+            if (!msg || msg.key?.fromMe) continue;
 
             const remoteJid = String(msg.key?.remoteJid || '');
             if (!this.isDirectInboundJid(remoteJid)) continue;
 
             const text = this.extractIncomingText(msg.message);
             if (!text) continue;
-
-            // Messages the owner sends from their own phone. Judging whether a
-            // lead is converting needs both halves of the exchange, and the
-            // owner answers by hand — auto-reply is off. Recorded only for
-            // contacts already captured as leads, never for anyone else.
-            if (msg.key?.fromMe) {
-              this.recordOutboundToLead(ownerEmail, remoteJid, text, msg.key?.id || '')
-                .catch((err) => console.error('[WA] recordOutboundToLead error:', err?.message || err));
-              continue;
-            }
 
             // ── BUG 1 FIX: Skip messages received BEFORE session started ─────
             const msgTimestampSec = Number(msg.messageTimestamp || 0);
@@ -883,26 +804,6 @@ class BaileysSessionManager {
     return { messageId: sent?.key?.id || '' };
   }
 
-  // Store a message the owner sent by hand, but only against a contact who is
-  // already a lead. Anyone else stays out of the database entirely.
-  async recordOutboundToLead(ownerEmail, remoteJid, text, messageId) {
-    const owner = String(ownerEmail || DEFAULT_OWNER).trim().toLowerCase();
-    const bare = String(remoteJid || '').split('@')[0].replace(/[^\d]/g, '');
-    if (!owner || !bare) return;
-
-    const profile = await UserProfile.findOne(ownerScope(owner, { userId: bare })).lean();
-    if (!profile?.isLead) return;
-
-    if (messageId) {
-      const dup = await Conversation.findOne({ owner_email: owner, messageId, role: 'assistant' }).lean();
-      if (dup) return;
-    }
-    await Conversation.create(ownerScope(owner, {
-      userId: bare, role: 'assistant', content: text, messageId: messageId || '',
-    }));
-    agent.classifyLead(owner, bare).catch((e) => console.error('[WA] classify err:', e?.message));
-  }
-
   async handleIncomingText(ownerEmail, from, body, messageId, replyJid = '', pushName = '', lidOnly = false) {
     const inbound = String(body || '').trim();
     if (!inbound) return;
@@ -947,13 +848,7 @@ class BaileysSessionManager {
     const keywords = Array.isArray(cfg?.reply_keywords) ? cfg.reply_keywords.filter(Boolean) : [];
     let matchedKeyword = null;
 
-    // Someone already captured stays captured: their follow-ups are part of the
-    // same conversation, and requiring the keyword again would drop everything
-    // after the first message and leave nothing to judge conversion from.
-    const known = await UserProfile.findOne(ownerScope(safeOwner, { userId: safeFrom })).lean();
-    const alreadyLead = Boolean(known?.isLead);
-
-    if (scope === 'keywords' && !alreadyLead) {
+    if (scope === 'keywords') {
       if (!keywords.length) {
         console.log(`[WA] Keyword mode but no keywords configured — ignoring message from ${safeFrom}`);
         return;
@@ -1007,10 +902,7 @@ class BaileysSessionManager {
       await Conversation.create(ownerScope(safeOwner, { userId: safeFrom, role: 'user', content: inbound, messageId: safeMsgId }));
     } catch (e) { console.error('[WA] save err:', e?.message); }
 
-    console.log(`[WA] 🎯 LEAD ${alreadyLead ? 'message' : 'captured'}: ${safeFrom} name="${safeName}" keyword="${matchedKeyword || (alreadyLead ? '(existing lead)' : '(scope=all)')}" text="${inbound.substring(0, 60)}"`);
-
-    // Re-read the exchange and re-score where this contact stands.
-    agent.classifyLead(safeOwner, safeFrom).catch((e) => console.error('[WA] classify err:', e?.message));
+    console.log(`[WA] 🎯 LEAD captured: ${safeFrom} name="${safeName}" keyword="${matchedKeyword || '(scope=all)'}" text="${inbound.substring(0, 60)}"`);
 
     // ── Auto-reply ─────────────────────────────────────────────────────────
     // Off unless explicitly enabled. Nothing below runs by default, so no
